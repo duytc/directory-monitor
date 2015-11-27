@@ -1,0 +1,11 @@
+{
+    "autoload": {
+        "psr-0": {
+            "Tagcade": "src/"
+        }
+    },
+
+    "require": {
+        "concerto/directory-monitor": "0.*"
+    }
+}

@@ -3,10 +3,15 @@ Composer install concerto/directory-monitor
 
 1. Install pear
 ---
-
+```
+sudo apt-get install php-pear
+```
 
 2. Install php5-dev
 ---
+```
+
+```
 
 3. Pear install inotify extension
 ---

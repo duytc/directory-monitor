@@ -1,0 +1,4 @@
+<?php
+
+define('TAGCADE_UNIFIED_REPORT_IMPORT_MODULE', '/var/www/unified-report.tagcade.dev');
+define('TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT', '/var/www/unified-report-directory-monitor.tagcade.dev/data');

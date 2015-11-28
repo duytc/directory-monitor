@@ -2,12 +2,6 @@
 
 namespace src;
 
-
-/* An easy way to keep in track of external processes.
-* Ever wanted to execute a process in php, but you still wanted to have somewhat controll of the process ? Well.. This is a way of doing it.
-* @compability: Linux only. (Windows does not work).
-* @author: Peec
-*/
 class Process
 {
     private $pid;
@@ -42,12 +36,8 @@ class Process
 
     public function status()
     {
-        echo "check pid " . $this->pid . "\n";
-
         $command = 'ps -p ' . $this->pid;
         exec($command, $op);
-
-        echo print_r($op, true) . "\n";
 
         if (!isset($op[1])) return false;
         else return true;

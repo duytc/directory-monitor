@@ -3,13 +3,14 @@
 require 'vendor/autoload.php';
 require 'src/Worker.php';
 require 'src/Process.php';
+require 'config.php';
 
 use Concerto\DirectoryMonitor\RecursiveMonitor;
 use React\EventLoop\Factory as EventLoopFactory;
 use src\Worker;
 
 $loop = EventLoopFactory::create();
-$monitor = new RecursiveMonitor($loop, __DIR__ . '/data');
+$monitor = new RecursiveMonitor($loop, TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT);
 
 /* Ignore all temp files: */
 $monitor->ignore('\___jb_');

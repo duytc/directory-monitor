@@ -4,12 +4,6 @@ namespace src;
 
 class Worker
 {
-    const TAGCADE_UNIFIED_REPORT_IMPORT_MODULE = '/var/www/unified-report.tagcade.dev/';
-
-    public function __construct()
-    {
-    }
-
     public function doJob($dir, $filePath)
     {
         if (!$this->isFileValid($filePath)) {
@@ -22,7 +16,7 @@ class Worker
             throw new \Exception(sprintf("Can not extract publisherId from dir %s!!!\n", $dir));
         }
 
-        $command = sprintf('php %s/app/console tc:unified-report:import --publisher %s %s', self::TAGCADE_UNIFIED_REPORT_IMPORT_MODULE, $publisherId, $filePath);
+        $command = sprintf('php %s/app/console tc:unified-report:import --publisher %s %s', TAGCADE_UNIFIED_REPORT_IMPORT_MODULE, $publisherId, $filePath);
 
         echo sprintf("importing File %s with Publisher #%s ...\n", $filePath, $publisherId);
 

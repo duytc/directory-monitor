@@ -36,3 +36,7 @@ then install:
 ```
 composer install
 ```
+
+6. Config
+---
+Create config.php (base on config.php.dist).

@@ -22,7 +22,6 @@ class Worker
         }
 
         $command = sprintf('php app/console tc:unified-report:import --publisher %s %s', $publisherId, $filePath);
-        $command = 'top';
 
         echo sprintf("importing File %s with Publisher #%s ...\n", $filePath, $publisherId);
 

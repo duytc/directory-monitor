@@ -23,8 +23,6 @@ $monitor->on('create', function ($path, $root) {
     $dirAfterRoot = substr($path, 0, strpos($path, $fileName) - 1); // not include '/' at the end, dirAfterRoot: pulse-point/2
     $filePath = $root . '/' . $dirAfterRoot . '/' . $fileName;
 
-    echo sprintf("-fileName: %s\n-dirAfterRoot: %s\n-filePath: %s\n", $fileName, $dirAfterRoot, $filePath);
-
     try {
         (new Worker())->doJob($dirAfterRoot, $filePath);
     } catch (Exception $e) {

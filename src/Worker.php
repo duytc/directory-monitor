@@ -20,12 +20,12 @@ class Worker
             throw new \Exception("Expect dir has depth levels >= 2!!!\n");
         }
 
-        $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+        $publisherId = filter_var($dirs[self::DIR_IDX_AS_PUBLISHER], FILTER_VALIDATE_INT);
         if (!$publisherId) {
             throw new \Exception(sprintf("Can not extract Publisher from dir %s!!!\n", $dir));
         }
 
-        $adNetworkName = array_pop($dirs);
+        $adNetworkName = $dirs[self::DIR_IDX_AS_AD_NETWORK];
         if (empty($adNetworkName)) {
             throw new \Exception(sprintf("Can not extract AdNetwork from dir %s!!!\n", $dir));
         }

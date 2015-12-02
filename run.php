@@ -19,11 +19,17 @@ $monitor->ignore('\___jb_');
 $monitor->on('create', function ($path, $root) {
     echo "Got new file: {$path} in {$root}\n";
 
-    $fileName = basename($path);
-    $dir = $root . '/' . substr($path, 0, strpos($path, $fileName) - 1); // not include '/' at the end
-    $filePath = $dir . '/' . $fileName;
+    $fileName = basename($path); // path: pulse-point/2/report.csv, // fileName: report.csv
+    $dirAfterRoot = substr($path, 0, strpos($path, $fileName) - 1); // not include '/' at the end, dirAfterRoot: pulse-point/2
+    $filePath = $root . '/' . $dirAfterRoot . '/' . $fileName;
 
-    (new Worker())->doJob($dir, $filePath);
+    echo sprintf("-fileName: %s\n-dirAfterRoot: %s\n-filePath: %s\n", $fileName, $dirAfterRoot, $filePath);
+
+    try {
+        (new Worker())->doJob($dirAfterRoot, $filePath);
+    } catch (Exception $e) {
+        echo sprintf("Exception while importing file %s in %s: %s\n", $path, $root, $e->getMessage());
+    }
 });
 
 $loop->run();

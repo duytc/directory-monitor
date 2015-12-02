@@ -4,7 +4,9 @@ namespace src;
 
 class Worker
 {
-    const DIR_MIN_DEPTH_LEVELS = 2; // <root>/<adNetworkName>/<publisherId>, e/g: data/Pulse Point/2
+    const DIR_MIN_DEPTH_LEVELS = 2; // <adNetworkName>/<publisherId>, e/g: Pulse Point/2
+    const DIR_IDX_AS_AD_NETWORK = 0; // <adNetworkName>, e/g: Pulse Point
+    const DIR_IDX_AS_PUBLISHER = 1; // <publisherId>, e/g: 2
 
     public function doJob($dir, $filePath)
     {

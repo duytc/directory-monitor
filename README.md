@@ -40,3 +40,12 @@ composer install
 6. Config
 ---
 Create config.php (base on config.php.dist).
+In config.php, we set "TAGCADE_UNIFIED_REPORT_IMPORT_MODULE" as path to root folder of module tagcade-unified-report-importer (for calling command ```php app/console tc:unified-report:import ...```);
+
+and set "TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT" as path to folder contains all report files, in which, the directory structure is ```<Ad Network Name>/<Publisher Id>/<All sub-directories and report files>```. 
+
+For example: if we set ```TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT = /home/tagcade-report/report-data/```
+
+the path ```/home/tagcade-report/data-report/Pulse Point/2/report.csv``` contains report.csv for Ad Network "Pulse Point" and Publisher ID "2"
+
+the path ```/home/tagcade-report/data-report/Pulse Point/2/20151130/report_2.csv``` contains report.csv in sub-directory for Ad Network "Pulse Point" and Publisher ID "2".

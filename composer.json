@@ -6,6 +6,8 @@
     },
 
     "require": {
-        "concerto/directory-monitor": "0.*"
+        "concerto/directory-monitor": "0.*",
+        "pda/pheanstalk": "^3.1",
+        "monolog/monolog": "^1.17"
     }
 }

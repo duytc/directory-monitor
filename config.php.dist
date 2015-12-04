@@ -3,6 +3,7 @@
 define('TAGCADE_UNIFIED_REPORT_IMPORT_MODULE', '/var/www/unified-report.tagcade.dev');
 define('TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT', __DIR__ . '/data');
 define('PHEANSTALK_HOST', '127.0.0.1');
+define('PHEANSTALK_TTR', 3600);
 define('WORKER_TIME_LIMIT', 10800);
 define('LOG_STREAM', 'php://stdout');
 define('LOG_LEVEL', 100); // DEBUG = 100

@@ -54,7 +54,7 @@ class Worker
             $fullPath
         );
 
-        $this->logger->info(sprintf("command %s\n", $command));
+//        $this->logger->info(sprintf("command %s", $command));
 
         $this->executeCommand($command, false);
 

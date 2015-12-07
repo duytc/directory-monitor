@@ -36,7 +36,12 @@ $monitor->on('create', function ($path, $root) use($pheanstalk, $logger) {
 
     $pheanstalk
         ->useTube('unified-report-files')
-        ->put(json_encode(['rootDir' => $root, 'filePath' => $path]));
+        ->put(
+            json_encode(['rootDir' => $root, 'filePath' => $path]),
+            \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
+            \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
+            JOB_TIME_TO_RUN
+        );
 });
 
 $loop->run();

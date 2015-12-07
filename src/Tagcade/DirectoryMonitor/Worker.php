@@ -21,9 +21,10 @@ class Worker
      *
      * @param $rootDir
      * @param $filePath
+     * @param $environment
      * @throws \Exception
      */
-    public function doJob($rootDir, $filePath)
+    public function doJob($rootDir, $filePath, $environment)
     {
         $fullPath = sprintf('%s/%s', $rootDir, $filePath);
 
@@ -54,10 +55,11 @@ class Worker
             $fullPath
         );
 
-//        $this->logger->info(sprintf("command %s", $command));
+        if ('prod' == $environment) {
+            $command .= ' --env=prod';
+        }
 
         $this->executeCommand($command, false);
-
     }
 
     /**

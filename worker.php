@@ -9,6 +9,8 @@ use Monolog\Handler\StreamHandler;
 use Tagcade\DirectoryMonitor\Worker;
 use Monolog\Formatter\LineFormatter;
 
+$env = getenv('SYMFONY_ENV') ?: 'prod';
+
 $pheanstalk = new Pheanstalk(PHEANSTALK_HOST); // local
 // create a log channel
 /**
@@ -65,7 +67,7 @@ while (true) {
 
         $logger->info(sprintf('Received job (ID: %s) with payload %s', $job->getId(), $rawData));
 
-        (new Worker($logger))->doJob($dir, $filePath);
+        (new Worker($logger))->doJob($dir, $filePath, $env);
 
         $logger->info(sprintf('Job (ID: %s) with payload %s has been completed', $job->getId(), $rawData));
 

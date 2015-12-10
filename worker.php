@@ -72,6 +72,9 @@ while (true) {
         $logger->info(sprintf('Job (ID: %s) with payload %s has been completed', $job->getId(), $rawData));
 
         $pheanstalk->delete($job);
+
+        // delete the file once imported
+        unlink($fullPath);
     }
     catch(\Exception $e) {
         $logger->error(

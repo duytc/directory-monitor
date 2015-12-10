@@ -81,7 +81,7 @@ while (true) {
         $logger->info(sprintf("New file is detected %s",  $filePath));
 
         $root = TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT;
-        $path = trim(str_replace($root, '', $file->getRealPath()), '/');
+        $path = trim(str_replace($root, '', $filePath), '/');
 
         $pheanstalk
             ->useTube(PHEANSTALK_JOB_TUBE)

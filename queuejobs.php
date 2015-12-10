@@ -31,7 +31,7 @@ while (true) {
     foreach ($files as $file) {
         /** @var SplFileInfo $file */
         $fileFullPath = $file->getRealPath();
-        $hashMd5 = hash('md5',$fileFullPath);
+        $hashMd5 = is_file($fileFullPath) ? hash_file('md5', $fileFullPath) : hash('md5',$fileFullPath);
         if (!array_key_exists($hashMd5, $detectedFiles)) {
 
             $detectedFiles[$hashMd5] = $fileFullPath;

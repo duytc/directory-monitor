@@ -1,3 +1,4 @@
 .idea/
 vendor/
 config.php
+app/config/parameters.yml

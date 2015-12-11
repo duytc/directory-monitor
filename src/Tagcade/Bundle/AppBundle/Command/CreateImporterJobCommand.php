@@ -41,6 +41,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         );
 
         $fileList = [];
+        $duplicateFileCount = 0;
         foreach($filesAndFolders as $fd) {
             /** @var \SplFileInfo $fd */
             $fileFullPath = $fd->getRealPath();
@@ -52,7 +53,12 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             if (!array_key_exists($md5, $fileList)) {
                 $fileList[$md5] = $fileFullPath;
             }
+            else {
+                $duplicateFileCount ++;
+            }
         }
+
+        $output->writeln(sprintf('Found %d new files and other %d duplications', count($fileList), $duplicateFileCount));
 
         $this->createJob($fileList, $tube, $ttr, $output);
     }

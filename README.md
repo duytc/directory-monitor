@@ -17,7 +17,7 @@ composer update --prefer-dist
 php app/console tc:unified-report:directory-monitor:create-job
 ```
 
-4. Example of cleaning imported files jop
+4. Example of cleaning imported files job
 ---
 ```
 php app/console tc:unified-report:directory-monitor:remove-imported-files

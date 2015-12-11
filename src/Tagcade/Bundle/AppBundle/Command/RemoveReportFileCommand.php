@@ -17,7 +17,7 @@ class RemoveReportFileCommand extends ContainerAwareCommand
     protected function configure()
     {
         $this
-            ->setName('tc:unified-report:directory-monitor:remove-files')
+            ->setName('tc:unified-report:directory-monitor:remove-imported-files')
         ;
     }
 

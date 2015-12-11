@@ -1,51 +1,25 @@
-Composer install concerto/directory-monitor
-===
 
-1. Install pear
+1. Clone new repository
 ---
 ```
-sudo apt-get install php-pear
+git clone path_to_this
 ```
 
-2. Install php5-dev
+2. update composer package dependencies
 ---
 ```
-sudo apt-get install php5-dev
+composer update --prefer-dist
 ```
 
-3. Install inotify extension
+3. Example of creating job for importer code base
 ---
-Go to [http://pecl.php.net/package/inotify](http://pecl.php.net/package/inotify) and download inotify-0.1.6.tgz, then install using via pear:
 ```
-sudo pear install <path-to-inotify-0.1.6.tgz>
+php app/console tc:unified-report:directory-monitor:create-job tubeName --watchRoot pathToRootFolder --timeToRun=60
 ```
 
-4. Config php.ini
+4. Example of cleaning imported files jop
 ---
-Add line ```extension=inotify.so``` to files php.ini (in ```/etc/php5/apache2/php.ini``` and ``` /etc/php5/cli/php.ini ```) to enable inotify.so library.
-
-5. Composer install concerto/directory-monitor
----
-Add package to composer.json if not yet existed: 
 ```
-"require": {
-    "concerto/directory-monitor": "0.*"
-}
-```
-then install: 
-```
-composer install
+php app/console tc:unified-report:directory-monitor:remove-imported-files
 ```
 
-6. Config
----
-Create config.php (base on config.php.dist).
-In config.php, we set "TAGCADE_UNIFIED_REPORT_IMPORT_MODULE" as path to root folder of module tagcade-unified-report-importer (for calling command ```php app/console tc:unified-report:import ...```);
-
-and set "TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT" as path to folder contains all report files, in which, the directory structure is ```<Ad Network Name>/<Publisher Id>/<All sub-directories and report files>```. 
-
-For example: if we set ```TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT = /home/tagcade-report/report-data/```
-
-the path ```/home/tagcade-report/data-report/Pulse Point/2/report.csv``` contains report.csv for Ad Network "Pulse Point" and Publisher ID "2"
-
-the path ```/home/tagcade-report/data-report/Pulse Point/2/20151130/report_2.csv``` contains report.csv in sub-directory for Ad Network "Pulse Point" and Publisher ID "2".

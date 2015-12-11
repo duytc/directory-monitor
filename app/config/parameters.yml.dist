@@ -12,5 +12,7 @@ parameters:
     # A secret key that's used to generate certain security-related tokens
     secret:            ThisTokenIsNotSoSecretChangeIt
 
-    # Size for each batch insert in parser
-    parser.batch_size: 5000
+    # root directory to have files scanned
+    watch_root: /home/vagrant/tagcade/directory-monitor/data
+    pheanstalk_ttr: 60
+    pheanstalk_files_tube: unified-report-files

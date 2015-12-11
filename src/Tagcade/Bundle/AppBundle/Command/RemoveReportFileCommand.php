@@ -36,5 +36,36 @@ class RemoveReportFileCommand extends ContainerAwareCommand
 
             exec(sprintf('rm -f %s', $file));
         }
+
+        // Remove all empty folders
+        $watchRoot = $this->getContainer()->getParameter('watch_root');
+        if (!file_exists($watchRoot) || !is_dir($watchRoot)) {
+            throw new \InvalidArgumentException(sprintf('The folder %s does not exist', $watchRoot));
+        }
+
+        $allImportedFiles = [
+            '/home/vagrant/tagcade/directory-monitor/data/pulse-point/2/DomainImpressionsReport/DomainImpressions(1-100000).csv',
+        ];
+
+        $allPublisherDirs = [];
+        foreach ($allImportedFiles as $fileFullPath) {
+            $fileRelativePath =  trim(str_replace($watchRoot, '', $fileFullPath), '/');
+            $dirs = explode('/', $fileRelativePath);
+            if (count($dirs) < 3) {
+                exec(sprintf('', $fileFullPath));
+                continue;
+            }
+
+            $publisherRelativePath = implode('/', array_slice($dirs, 0, 2));
+            $publisherFullPath = sprintf('%s/%s',$watchRoot, $publisherRelativePath);
+            $md5 = hash('md5', $publisherFullPath);
+            if (!array_key_exists($md5, $allPublisherDirs)) {
+                $allPublisherDirs[$md5] = $publisherFullPath;
+            }
+        }
+
+        foreach ($allPublisherDirs as $md5 => $pubDir) {
+            exec(sprintf('find %s -depth -type d -exec rmdir {} +', $pubDir));
+        }
     }
 } 

@@ -20,23 +20,24 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     {
         $this
             ->setName('tc:unified-report:directory-monitor:create-job')
-            ->addArgument('tube', InputArgument::REQUIRED, 'Name of the Pheanstalk tube to be watched')
-            ->addOption('watchRoot', 'wr', InputOption::VALUE_REQUIRED, 'Folder root where files will be scanned to create job')
-            ->addOption('timeToRun', 'ttr', InputOption::VALUE_OPTIONAL, 'Custom time to run for pheanstalk job')
         ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $tube = $input->getArgument('tube');
-        $watchRoot = $input->getOption('watchRoot');
-        if (!file_exists($watchRoot)) {
-            throw new \InvalidArgumentException('Expect an existing folder root to scan');
+        $tube = $this->getContainer()->getParameter('unified_report_files_tube');
+        $watchRoot = $this->getContainer()->getParameter('watch_root');
+        if (!file_exists($watchRoot) || !is_dir($watchRoot)) {
+            throw new \InvalidArgumentException(sprintf('The folder %s does not exist', $watchRoot));
         }
 
+        $ttr = (int)$this->getContainer()->getParameter('pheanstalk_ttr');
+        if ($ttr < 1) {
+            $ttr = \Pheanstalk\PheanstalkInterface::DEFAULT_TTR;
+        }
 
         $filesAndFolders = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator(TAGCADE_UNIFIED_REPORT_MONITOR_DIRECTORY_ROOT, \RecursiveDirectoryIterator::SKIP_DOTS),
+            new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST
         );
 
@@ -53,10 +54,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
         }
 
-        $ttr = (int)$input->getOption('timeToRun');
-        if ($ttr < 1) {
-            $ttr = \Pheanstalk\PheanstalkInterface::DEFAULT_TTR;
-        }
 
         $this->createJob($fileList, $tube, $ttr, $output);
 

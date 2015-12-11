@@ -14,7 +14,7 @@ composer update --prefer-dist
 3. Example of creating job for importer code base
 ---
 ```
-php app/console tc:unified-report:directory-monitor:create-job tubeName --watchRoot pathToRootFolder --timeToRun=60
+php app/console tc:unified-report:directory-monitor:create-job
 ```
 
 4. Example of cleaning imported files jop

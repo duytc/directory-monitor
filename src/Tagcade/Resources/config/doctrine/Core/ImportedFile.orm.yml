@@ -1,0 +1,27 @@
+Tagcade\Entity\Core\ImportedFile:
+    type: entity
+    table: core_imported_file
+    repositoryClass: Tagcade\Repository\Core\ImportedFileRepository
+    id:
+        id:
+            type: integer
+            generator:
+                strategy: AUTO
+    fields:
+        publisherId:
+            type: integer
+        filePath:
+            type: string
+            length: 255
+        hash:
+            type: string
+            length: 255
+        hashType:
+            type: string
+            options:
+                default: sha1
+        createdAt:
+            type: datetime
+            gedmo:
+                timestampable:
+                    on: create

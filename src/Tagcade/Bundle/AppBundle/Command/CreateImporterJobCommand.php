@@ -48,12 +48,13 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $fileList[] = $fileFullPath;
+            $md5 = hash_file('md5', $fileFullPath);
+            if (!array_key_exists($md5, $fileList)) {
+                $fileList[$md5] = $fileFullPath;
+            }
         }
 
-
         $this->createJob($fileList, $tube, $ttr, $output);
-
     }
 
     protected function createJob(array $fileList, $tube, $ttr, OutputInterface $output)
@@ -62,7 +63,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
          * @var PheanstalkInterface $pheanstalk
          */
         $pheanstalk = $this->getContainer()->get('leezy.pheanstalk.primary');
-        foreach ($fileList as $filePath) {
+        foreach ($fileList as $md5 => $filePath) {
 
             // Extract network name and publisher id from file path
             $dirs = array_reverse(explode('/', $filePath));

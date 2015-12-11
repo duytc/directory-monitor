@@ -11,6 +11,8 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareInterface;
+use Tagcade\Entity\Core\QueuedFile;
+use Tagcade\Repository\Core\QueuedFileRepositoryInterface;
 
 class CreateImporterJobCommand extends ContainerAwareCommand
 {
@@ -36,20 +38,30 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $ttr = \Pheanstalk\PheanstalkInterface::DEFAULT_TTR;
         }
 
-        $filesAndFolders = new \RecursiveIteratorIterator(
+        /**
+         * @var QueuedFileRepositoryInterface $queuedFileRepository
+         */
+        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.imported_file');
+
+        $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
         $fileList = [];
         $duplicateFileCount = 0;
-        foreach($filesAndFolders as $fd) {
-            /** @var \SplFileInfo $fd */
-            $fileFullPath = $fd->getRealPath();
+        foreach($files as $file) {
+            /** @var \SplFileInfo $file */
+            $fileFullPath = $file->getRealPath();
             if (!is_file($fileFullPath)) {
                 continue;
             }
 
             $md5 = hash_file('md5', $fileFullPath);
+            $queuedFile = $queuedFileRepository->findByHash($md5);
+            if ($queuedFile instanceof QueuedFile) {
+                continue;
+            }
+
             if (!array_key_exists($md5, $fileList)) {
                 $fileList[$md5] = $fileFullPath;
             }
@@ -65,6 +77,10 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
     protected function createJob(array $fileList, $tube, $ttr, OutputInterface $output)
     {
+        /**
+         * @var QueuedFileRepositoryInterface $queuedFileRepository
+         */
+        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.imported_file');
         /**
          * @var PheanstalkInterface $pheanstalk
          */
@@ -99,6 +115,14 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                     $ttr
                 )
             ;
+
+            try {
+                $queuedFileRepository->createNew($md5, $filePath);
+            }
+            catch(\Exception $e) {
+                $output->writeln($e->getMessage());
+            }
+
         }
     }
 }

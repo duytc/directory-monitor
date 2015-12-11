@@ -1,0 +1,10 @@
+# This file is auto-generated during the composer install
+parameters:
+    database_driver: pdo_mysql
+    database_host: 127.0.0.1
+    database_port: null
+    database_name: tagcade_unified_report
+    database_user: tagcadedev
+    database_password: tagcadedev
+    secret: ThisTokenIsNotSoSecretChangeIt
+    parser.batch_size: 5000

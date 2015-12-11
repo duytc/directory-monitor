@@ -7,7 +7,7 @@ parameters:
     database_user: tagcadedev
     database_password: tagcadedev
     secret: ThisTokenIsNotSoSecretChangeIt
-
     watch_root: /home/vagrant/tagcade/directory-monitor/data
     pheanstalk_ttr: 60
     unified_report_files_tube: unified-report-files
+

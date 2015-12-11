@@ -41,7 +41,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         /**
          * @var QueuedFileRepositoryInterface $queuedFileRepository
          */
-        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.imported_file');
+        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.queued_file');
 
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
@@ -77,18 +77,19 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
     protected function createJob(array $fileList, $tube, $ttr, OutputInterface $output)
     {
+        $watchRoot = $this->getContainer()->getParameter('watch_root');
         /**
          * @var QueuedFileRepositoryInterface $queuedFileRepository
          */
-        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.imported_file');
+        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.queued_file');
         /**
          * @var PheanstalkInterface $pheanstalk
          */
         $pheanstalk = $this->getContainer()->get('leezy.pheanstalk.primary');
         foreach ($fileList as $md5 => $filePath) {
-
+            $fileRelativePath =  trim(str_replace($watchRoot, '', $filePath), '/');
             // Extract network name and publisher id from file path
-            $dirs = array_reverse(explode('/', $filePath));
+            $dirs = array_reverse(explode('/', $fileRelativePath));
             if(!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
                 $output->writeln(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $filePath));
                 continue;
@@ -106,15 +107,15 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $pheanstalk
-                ->useTube($tube)
-                ->put(
-                    json_encode(['filePath' => $filePath]),
-                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
-                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
-                    $ttr
-                )
-            ;
+//            $pheanstalk
+//                ->useTube($tube)
+//                ->put(
+//                    json_encode(['filePath' => $filePath]),
+//                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
+//                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
+//                    $ttr
+//                )
+//            ;
 
             try {
                 $queuedFileRepository->createNew($md5, $filePath);

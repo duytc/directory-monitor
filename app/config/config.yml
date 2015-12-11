@@ -56,10 +56,6 @@ doctrine:
             default:
                 connection:         default
                 naming_strategy:    doctrine.orm.naming_strategy.underscore
-#                filters:
-#                    softdeleteable:
-#                        class: Gedmo\SoftDeleteable\Filter\SoftDeleteableFilter
-#                        enabled: true
                 mappings:
                     # bundles
                     TagcadeAppBundle:  ~
@@ -70,6 +66,11 @@ doctrine:
                         prefix:     Tagcade\Entity\Core
                         alias:      TagcadeCoreEntity
                         is_bundle:  false
+
+stof_doctrine_extensions:
+    orm:
+        default:
+            timestampable: true
 
 leezy_pheanstalk:
     pheanstalks:

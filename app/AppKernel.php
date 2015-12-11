@@ -15,6 +15,8 @@ class AppKernel extends Kernel
 
             new Tagcade\Bundle\AppBundle\TagcadeAppBundle(),
             new Leezy\PheanstalkBundle\LeezyPheanstalkBundle(),
+            new Stof\DoctrineExtensionsBundle\StofDoctrineExtensionsBundle(),
+
         );
 
         if (in_array($this->getEnvironment(), array('dev', 'test'), true)) {

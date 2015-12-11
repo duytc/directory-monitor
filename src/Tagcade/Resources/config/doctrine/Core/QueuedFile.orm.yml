@@ -1,6 +1,6 @@
 Tagcade\Entity\Core\QueuedFile:
     type: entity
-    table: core_imported_file
+    table: core_queued_file
     repositoryClass: Tagcade\Repository\Core\QueuedFileRepository
     uniqueConstraints:
         queued_file_unique_key:

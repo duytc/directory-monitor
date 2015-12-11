@@ -15,4 +15,4 @@ parameters:
     # root directory to have files scanned
     watch_root: /home/vagrant/tagcade/directory-monitor/data
     pheanstalk_ttr: 60
-    pheanstalk_files_tube: unified-report-files
+    unified_report_files_tube: unified-report-files

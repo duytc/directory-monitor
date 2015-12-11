@@ -1,5 +1,6 @@
 parameters:
     tagcade.entity.imported_file.class: Tagcade\Entity\Core\ImportedFile
+    tagcade.entity.queued_file.class: Tagcade\Entity\Core\QueuedFile
 
 services:
     tagcade_app.repository.imported_file:
@@ -9,6 +10,12 @@ services:
         arguments:
             - %tagcade.entity.imported_file.class%
 
+    tagcade_app.repository.queued_file:
+        class: Tagcade\Repository\Core\ImportedFileRepository
+        factory_service: doctrine.orm.entity_manager
+        factory_method: getRepository
+        arguments:
+            - %tagcade.entity.queued_file.class%
 
 
 

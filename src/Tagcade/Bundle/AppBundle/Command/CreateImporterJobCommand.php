@@ -107,15 +107,15 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-//            $pheanstalk
-//                ->useTube($tube)
-//                ->put(
-//                    json_encode(['filePath' => $filePath]),
-//                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
-//                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
-//                    $ttr
-//                )
-//            ;
+            $pheanstalk
+                ->useTube($tube)
+                ->put(
+                    json_encode(['filePath' => $filePath, 'publisherId' => $publisherId, 'networkPartnerName' => $adNetworkName]),
+                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
+                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
+                    $ttr
+                )
+            ;
 
             try {
                 $queuedFileRepository->createNew($md5, $filePath);

@@ -37,21 +37,18 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         }
 
         $filesAndFolders = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
+            new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
         $fileList = [];
-        $dirList = [];
-
         foreach($filesAndFolders as $fd) {
             /** @var \SplFileInfo $fd */
             $fileFullPath = $fd->getRealPath();
-            if (is_file($fileFullPath)) {
-                $fileList[] = $fileFullPath;
-            }else if (is_dir($fileFullPath)) {
-                $dirList[] = $fileFullPath;
+            if (!is_file($fileFullPath)) {
+                continue;
             }
+
+            $fileList[] = $fileFullPath;
         }
 
 

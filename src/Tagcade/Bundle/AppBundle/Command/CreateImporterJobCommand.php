@@ -21,7 +21,8 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     protected function configure()
     {
         $this
-            ->setName('tc:unified-report:directory-monitor:create-job')
+            ->setName('tc:create-importer-job')
+            ->setDescription('Scan for relevant files in pre-configured directory and create beantalkd importing job for importer module')
         ;
     }
 

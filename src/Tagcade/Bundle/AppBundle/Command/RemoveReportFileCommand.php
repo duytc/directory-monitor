@@ -17,7 +17,8 @@ class RemoveReportFileCommand extends ContainerAwareCommand
     protected function configure()
     {
         $this
-            ->setName('tc:unified-report:directory-monitor:remove-imported-files')
+            ->setName('tc:remove-imported-files')
+            ->setDescription('Remove imported files and folder. This command should be run once per day or a period of days depending hard disk capacity')
         ;
     }
 

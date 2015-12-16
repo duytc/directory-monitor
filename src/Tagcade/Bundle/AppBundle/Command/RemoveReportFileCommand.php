@@ -44,10 +44,6 @@ class RemoveReportFileCommand extends ContainerAwareCommand
             throw new \InvalidArgumentException(sprintf('The folder %s does not exist', $watchRoot));
         }
 
-        $allImportedFiles = [
-            '/home/vagrant/tagcade/directory-monitor/data/pulse-point/2/DomainImpressionsReport/DomainImpressions(1-100000).csv',
-        ];
-
         $allPublisherDirs = [];
         foreach ($allImportedFiles as $fileFullPath) {
             $fileRelativePath =  trim(str_replace($watchRoot, '', $fileFullPath), '/');

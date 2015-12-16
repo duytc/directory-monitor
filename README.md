@@ -1,3 +1,5 @@
+This code base enables two commands. One is to scan directory and files to be imported and create importing job for importer code base.
+ Second command is to remove imported files. You can use this command as a cron job task to remove files that were imported yesterday.
 
 1. Clone new repository
 ---

@@ -96,9 +96,9 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $adNetworkName = array_pop($dirs);
-            if (empty($adNetworkName)) {
-                $output->writeln(sprintf("Can not extract AdNetwork from file path %s!!!\n", $filePath));
+            $partnerCName = array_pop($dirs);
+            if (empty($partnerCName)) {
+                $output->writeln(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
                 continue;
             }
 
@@ -108,10 +108,16 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $date = array_pop($dirs);
+
+            if (is_string($date) && !$this->isValidDateString($date)) {
+                continue;
+            }
+
             $pheanstalk
                 ->useTube($tube)
                 ->put(
-                    json_encode(['filePath' => $filePath, 'publisherId' => $publisherId, 'networkPartnerName' => $adNetworkName]),
+                    json_encode(['filePath' => $filePath, 'publisherId' => $publisherId, 'partnerCName' => $partnerCName, 'date' => $date]),
                     \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
                     \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
                     $ttr
@@ -126,5 +132,12 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
 
         }
+    }
+
+    protected function isValidDateString($dateString)
+    {
+        $dateParts = date_parse($dateString);
+
+        return ($dateParts["error_count"] == 0 && checkdate($dateParts["month"], $dateParts["day"], $dateParts["year"]));
     }
 }

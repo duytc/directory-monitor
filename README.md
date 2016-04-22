@@ -16,12 +16,22 @@ composer update --prefer-dist
 3. Example of creating job for importer code base
 ---
 ```
-php app/console tc:unified-report:directory-monitor:create-job
+php app/console tc:create-importer-job
 ```
+This command will fetch the root data directory to discover if there's new report file. Push that file into queue with
+it's parameters accompanied. Those parameters are extracted from the file's absolute path which respect the hierarchy order :
+
+```
+{root directory}/{Partner Canonical Name}/{Publisher Id}/{date}
+```
+All new discovered files will be pushed into a queue for the worker to read and process.
 
 4. Example of cleaning imported files job
 ---
+
 ```
-php app/console tc:unified-report:directory-monitor:remove-imported-files
+php app/console tc:remove-imported-files
 ```
+
+This will remove all imported file from queue and also database
 

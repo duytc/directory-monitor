@@ -117,7 +117,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $pheanstalk
                 ->useTube($tube)
                 ->put(
-                    json_encode(['filePath' => $filePath, 'publisherId' => $publisherId, 'partnerCName' => $partnerCName, 'date' => $date]),
+                    json_encode(['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName, 'date' => $date]),
                     \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
                     \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
                     $ttr

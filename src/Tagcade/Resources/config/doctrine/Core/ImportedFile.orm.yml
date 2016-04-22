@@ -1,6 +1,6 @@
 Tagcade\Entity\Core\ImportedFile:
     type: entity
-    table: core_imported_file
+    table: core_partner_imported_file
     repositoryClass: Tagcade\Repository\Core\ImportedFileRepository
     id:
         id:

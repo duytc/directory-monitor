@@ -13,9 +13,13 @@ git clone path_to_this
 composer update --prefer-dist
 ```
 
-Make sure the watched directory has structure is: path/to/directory/{publisherId}/{partner canonical name}/{execution date}-{start-date}-{end-date}
+Make sure the watched directory has structure is: 
+    path/to/directory/{publisherId}/{partner canonical name}/{execution date}-{start-date}-{end-date}
+
 Execution date: is the date fetcher run to download csv file
+
 Start date: is the report start date
+
 End date: is the report end date
 
 

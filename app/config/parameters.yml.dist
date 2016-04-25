@@ -13,7 +13,7 @@ parameters:
     secret:            ThisTokenIsNotSoSecretChangeIt
 
     # root directory to have files scanned
-    watch_root: /home/vagrant/tagcade/directory-monitor/data
+    watch_root: /home/vagrant/tagcade/tagcade-unified-report-fetcher/data/publishers
     pheanstalk_ttr: 60
     unified_report_files_tube: unified-report-files
     pheanstalk_primary_host: 127.0.0.1

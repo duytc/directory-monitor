@@ -96,17 +96,18 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+            if (!$publisherId) {
+                $output->writeln(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
+                continue;
+            }
+
             $partnerCName = array_pop($dirs);
             if (empty($partnerCName)) {
                 $output->writeln(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
                 continue;
             }
 
-            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
-            if (!$publisherId) {
-                $output->writeln(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
-                continue;
-            }
 
             $date = array_pop($dirs);
 

@@ -7,11 +7,17 @@ This code base enables two commands. One is to scan directory and files to be im
 git clone path_to_this
 ```
 
-2. update composer package dependencies
+2. update composer package dependencies and configuration
 ---
 ```
 composer update --prefer-dist
 ```
+
+Make sure the watched directory has structure is: path/to/directory/{publisherId}/{partner canonical name}/{execution date}-{start-date}-{end-date}
+Execution date: is the date fetcher run to download csv file
+Start date: is the report start date
+End date: is the report end date
+
 
 3. Example of creating job for importer code base
 ---

@@ -109,16 +109,26 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
 
 
-            $date = array_pop($dirs);
+            $dates = array_pop($dirs);
+            $dates = explode('-', $dates);
+            if (count($dates) < 3) {
+                throw new \Exception('Invalid folder containing csv file. It should has format Ymd-Ymd-Ymd (execution date, report start date, report end date)');
+            }
 
-            if (is_string($date) && !$this->isValidDateString($date)) {
-                continue;
+
+            $fetchExeucutionDate = \DateTime::createFromFormat('Ymd', $dates[0]);
+            $reportStartDate = \DateTime::createFromFormat('Ymd', $dates[1]);
+            $reportEndDate = \DateTime::createFromFormat('Ymd', $dates[2]);
+
+            $importData = ['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName];
+            if ($dates[1] == $dates[2]) {
+                $importData['date'] = $reportStartDate->format('Y-m-d');
             }
 
             $pheanstalk
                 ->useTube($tube)
                 ->put(
-                    json_encode(['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName, 'date' => $date]),
+                    json_encode($importData),
                     \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
                     \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
                     $ttr

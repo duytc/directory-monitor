@@ -30,12 +30,7 @@ End date: is the report end date
 ```
 php app/console tc:create-importer-job
 ```
-This command will fetch the root data directory to discover if there's new report file. Push that file into queue with
-it's parameters accompanied. Those parameters are extracted from the file's absolute path which respect the hierarchy order :
 
-```
-{root directory}/{Partner Canonical Name}/{Publisher Id}/{date}
-```
 All new discovered files will be pushed into a queue for the worker to read and process.
 
 4. Example of cleaning imported files job

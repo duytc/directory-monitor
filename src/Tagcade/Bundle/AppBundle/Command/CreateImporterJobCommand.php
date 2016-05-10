@@ -4,6 +4,7 @@ namespace Tagcade\Bundle\AppBundle\Command;
 
 
 use Pheanstalk\PheanstalkInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -25,16 +26,16 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $logger = $this->getContainer()->get('logger');
         $tube = $this->getContainer()->getParameter('unified_report_files_tube');
         $watchRoot = $this->getContainer()->getParameter('watch_root');
-        $failedArchivedFiles = $this->getContainer()->getParameter('failed_archived_files');
         $processedArchivedFiles = $this->getContainer()->getParameter('processed_archived_files');
 
         if (!file_exists($watchRoot) || !is_dir($watchRoot) ||
-            !file_exists($failedArchivedFiles) || !is_dir($failedArchivedFiles) ||
             !file_exists($processedArchivedFiles) || !is_dir($processedArchivedFiles)
         ) {
-            throw new \InvalidArgumentException(sprintf('either %s or %s or %s does not exist', $watchRoot, $failedArchivedFiles, $processedArchivedFiles));
+            $logger->error(sprintf('either %s or %s does not exist', $watchRoot, $processedArchivedFiles));
+            throw new \InvalidArgumentException(sprintf('either %s or %s or %s does not exist', $watchRoot, $processedArchivedFiles));
         }
 
         $ttr = (int)$this->getContainer()->getParameter('pheanstalk_ttr');
@@ -52,7 +53,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         );
 
         // process zip files
-        $this->processZipFiles($files, $watchRoot, $failedArchivedFiles, $processedArchivedFiles, $output);
+        $this->processZipFiles($files, $watchRoot, $processedArchivedFiles, $logger);
 
         $fileList = [];
         $duplicateFileCount = 0;
@@ -82,7 +83,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $this->createJob($fileList, $tube, $ttr, $output);
     }
 
-    protected function processZipFiles($files, $watchRoot, $failedArchivedFiles, $processedArchivedFiles, OutputInterface $output)
+    protected function processZipFiles($files, $watchRoot, $processedArchivedFiles, LoggerInterface $logger)
     {
         /** @var \SplFileInfo $file */
         foreach ($files as $file) {
@@ -96,12 +97,12 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
 
             // Extract network name and publisher id from file path
-            $output->writeln(sprintf('processing zip file %s', $fileFullPath));
+            $logger->info(sprintf('processing zip file %s', $fileFullPath));
 
             $fileRelativePath =  trim(str_replace($watchRoot, '', $fileFullPath), '/');
             $dirs = array_reverse(explode('/', $fileRelativePath));
             if(!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
-                $output->writeln(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $fileFullPath));
+                $logger->info(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $fileFullPath));
                 continue;
             }
 
@@ -112,14 +113,11 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $extractTo = join('/', array($watchRoot, $partnerCName, $publisherId, $dates));
             $res = $this->unzip($fileFullPath, $extractTo);
 
-            $newName = '';
             if ($res === FALSE) {
-                $output->writeln(sprintf('<error>Failed to unzip the file %s</error>', $fileFullPath));
-                $newName = join('/', array ($failedArchivedFiles, $partnerCName, $publisherId, $dates));
-            } else {
-                // move the zip file
-                $newName = join('/', array ($processedArchivedFiles, $partnerCName, $publisherId, $dates));
+                $logger->error(sprintf('Failed to unzip the file %s', $fileFullPath));
             }
+
+            $newName = join('/', array ($processedArchivedFiles, $partnerCName, $publisherId, $dates));
 
             if (file_exists($newName) === FALSE) {
                 mkdir($newName, $mode = 0777, $recursive = true);

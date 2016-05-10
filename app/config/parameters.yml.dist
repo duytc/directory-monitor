@@ -14,7 +14,6 @@ parameters:
 
     # root directory to have files scanned
     watch_root: /home/vagrant/tagcade/tagcade-unified-report-fetcher/data
-    failed_archived_files: /home/vagrant/tagcade/tagcade-unified-report-fetcher/failed
     processed_archived_files: /home/vagrant/tagcade/tagcade-unified-report-fetcher/processed
     pheanstalk_ttr: 60
     unified_report_files_tube: unified-report-files

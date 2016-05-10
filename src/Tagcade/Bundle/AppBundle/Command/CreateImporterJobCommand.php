@@ -5,14 +5,11 @@ namespace Tagcade\Bundle\AppBundle\Command;
 
 use Pheanstalk\PheanstalkInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
-use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\DependencyInjection\ContainerAwareInterface;
 use Tagcade\Entity\Core\QueuedFile;
 use Tagcade\Repository\Core\QueuedFileRepositoryInterface;
+use ZipArchive;
 
 class CreateImporterJobCommand extends ContainerAwareCommand
 {
@@ -30,8 +27,14 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     {
         $tube = $this->getContainer()->getParameter('unified_report_files_tube');
         $watchRoot = $this->getContainer()->getParameter('watch_root');
-        if (!file_exists($watchRoot) || !is_dir($watchRoot)) {
-            throw new \InvalidArgumentException(sprintf('The folder %s does not exist', $watchRoot));
+        $failedArchivedFiles = $this->getContainer()->getParameter('failed_archived_files');
+        $processedArchivedFiles = $this->getContainer()->getParameter('processed_archived_files');
+
+        if (!file_exists($watchRoot) || !is_dir($watchRoot) ||
+            !file_exists($failedArchivedFiles) || !is_dir($failedArchivedFiles) ||
+            !file_exists($processedArchivedFiles) || !is_dir($processedArchivedFiles)
+        ) {
+            throw new \InvalidArgumentException(sprintf('either %s or %s or %s does not exist', $watchRoot, $failedArchivedFiles, $processedArchivedFiles));
         }
 
         $ttr = (int)$this->getContainer()->getParameter('pheanstalk_ttr');
@@ -47,6 +50,9 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
+
+        // process zip files
+        $this->processZipFiles($files, $watchRoot, $failedArchivedFiles, $processedArchivedFiles, $output);
 
         $fileList = [];
         $duplicateFileCount = 0;
@@ -76,6 +82,53 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $this->createJob($fileList, $tube, $ttr, $output);
     }
 
+    protected function processZipFiles($files, $watchRoot, $failedArchivedFiles, $processedArchivedFiles, OutputInterface $output)
+    {
+        /** @var \SplFileInfo $file */
+        foreach ($files as $file) {
+            $fileFullPath = $file->getRealPath();
+            if (!is_file($fileFullPath)) {
+                continue;
+            }
+
+            if ($this->endsWith($fileFullPath, '.zip') === FALSE) {
+                continue;
+            }
+
+            // Extract network name and publisher id from file path
+            $output->writeln(sprintf('processing zip file %s', $fileFullPath));
+
+            $fileRelativePath =  trim(str_replace($watchRoot, '', $fileFullPath), '/');
+            $dirs = array_reverse(explode('/', $fileRelativePath));
+            if(!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
+                $output->writeln(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $fileFullPath));
+                continue;
+            }
+
+            $partnerCName = array_pop($dirs);
+            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+            $dates = array_pop($dirs);
+
+            $extractTo = join('/', array($watchRoot, $partnerCName, $publisherId, $dates));
+            $res = $this->unzip($fileFullPath, $extractTo);
+
+            $newName = '';
+            if ($res === FALSE) {
+                $output->writeln(sprintf('<error>Failed to unzip the file %s</error>', $fileFullPath));
+                $newName = join('/', array ($failedArchivedFiles, $partnerCName, $publisherId, $dates));
+            } else {
+                // move the zip file
+                $newName = join('/', array ($processedArchivedFiles, $partnerCName, $publisherId, $dates));
+            }
+
+            if (file_exists($newName) === FALSE) {
+                mkdir($newName, $mode = 0777, $recursive = true);
+            }
+
+            rename($fileFullPath, join('/', array($newName, $file->getBasename())));
+        }
+    }
+
     protected function createJob(array $fileList, $tube, $ttr, OutputInterface $output)
     {
         $watchRoot = $this->getContainer()->getParameter('watch_root');
@@ -91,14 +144,9 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $fileRelativePath =  trim(str_replace($watchRoot, '', $filePath), '/');
             // Extract network name and publisher id from file path
             $dirs = array_reverse(explode('/', $fileRelativePath));
+
             if(!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
                 $output->writeln(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $filePath));
-                continue;
-            }
-
-            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
-            if (!$publisherId) {
-                $output->writeln(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
                 continue;
             }
 
@@ -108,13 +156,17 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+            if (!$publisherId) {
+                $output->writeln(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
+                continue;
+            }
 
             $dates = array_pop($dirs);
             $dates = explode('-', $dates);
             if (count($dates) < 3) {
                 throw new \Exception('Invalid folder containing csv file. It should has format Ymd-Ymd-Ymd (execution date, report start date, report end date)');
             }
-
 
             $fetchExeucutionDate = \DateTime::createFromFormat('Ymd', $dates[0]);
             $reportStartDate = \DateTime::createFromFormat('Ymd', $dates[1]);
@@ -141,7 +193,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             catch(\Exception $e) {
                 $output->writeln($e->getMessage());
             }
-
         }
     }
 
@@ -150,5 +201,26 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $dateParts = date_parse($dateString);
 
         return ($dateParts["error_count"] == 0 && checkdate($dateParts["month"], $dateParts["day"], $dateParts["year"]));
+    }
+
+    protected function unzip($filePath, $extractTo)
+    {
+        $zip = new ZipArchive;
+        $res = $zip->open($filePath);
+        if ($res === TRUE) {
+            $res = $zip->extractTo($extractTo);
+            $zip->close();
+        }
+
+        return $res;
+    }
+
+    protected function endsWith($string, $needle)
+    {
+        $strLen = strlen($string);
+        $needleLen = strlen($needle);
+        if ($needleLen > $strLen) return false;
+
+        return substr_compare($string, $needle, $strLen - $needleLen, $needleLen) === 0;
     }
 }

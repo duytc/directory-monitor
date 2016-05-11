@@ -13,7 +13,7 @@ parameters:
     secret:            ThisTokenIsNotSoSecretChangeIt
 
     # root directory to have files scanned
-    watch_root: /home/vagrant/tagcade/tagcade-unified-report-fetcher/data
+    watch_root: /home/vagrant/tagcade/tagcade-unified-report-fetcher/data/publishers
     processed_archived_files: /home/vagrant/tagcade/tagcade-unified-report-fetcher/processed
     pheanstalk_ttr: 60
     unified_report_files_tube: unified-report-files

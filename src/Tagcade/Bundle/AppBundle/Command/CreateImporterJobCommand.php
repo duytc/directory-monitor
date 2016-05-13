@@ -106,18 +106,18 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $partnerCName = array_pop($dirs);
             $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+            $partnerCName = array_pop($dirs);
             $dates = array_pop($dirs);
 
-            $extractTo = join('/', array($watchRoot, $partnerCName, $publisherId, $dates));
+            $extractTo = join('/', array($watchRoot, $publisherId, $partnerCName, $dates));
             $res = $this->unzip($fileFullPath, $extractTo);
 
             if ($res === FALSE) {
                 $logger->error(sprintf('Failed to unzip the file %s', $fileFullPath));
             }
 
-            $newName = join('/', array ($processedArchivedFiles, $partnerCName, $publisherId, $dates));
+            $newName = join('/', array ($processedArchivedFiles, $publisherId, $partnerCName, $dates));
 
             if (file_exists($newName) === FALSE) {
                 mkdir($newName, $mode = 0777, $recursive = true);
@@ -148,15 +148,15 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $partnerCName = array_pop($dirs);
-            if (empty($partnerCName)) {
-                $output->writeln(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
-                continue;
-            }
-
             $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
             if (!$publisherId) {
                 $output->writeln(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
+                continue;
+            }
+
+            $partnerCName = array_pop($dirs);
+            if (empty($partnerCName)) {
+                $output->writeln(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
                 continue;
             }
 

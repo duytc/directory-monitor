@@ -37,7 +37,7 @@ class AppKernel extends Kernel
     public function getCacheDir()
     {
         if ($this->isRunningOnDevelopmentVM()) {
-            return '/dev/shm/tagcade-unified-importer/cache/' .  $this->environment;
+            return '/dev/shm/tagcade-unified-directory-monitor/cache/' .  $this->environment;
         }
 
         return parent::getCacheDir();
@@ -46,7 +46,7 @@ class AppKernel extends Kernel
     public function getLogDir()
     {
         if ($this->isRunningOnDevelopmentVM()) {
-            return '/dev/shm/tagcade-unified-importer/logs';
+            return '/dev/shm/tagcade-unified-directory-monitor/logs';
         }
 
         return parent::getLogDir();

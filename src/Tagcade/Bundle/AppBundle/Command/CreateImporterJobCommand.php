@@ -176,6 +176,8 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                     $ttr
                 )
             ;
+
+            $this->logger->info(sprintf('Job is created for file %s', $filePath));
         }
     }
 }

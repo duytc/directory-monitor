@@ -163,6 +163,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 do {
 
                     $newTargetFile = sprintf('%s(%d)', $targetFile, $i);
+                    $i ++;
                 }
                 while(file_exists($newTargetFile));
             }

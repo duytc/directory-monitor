@@ -36,14 +36,24 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     {
         $this->logger = $this->getContainer()->get('logger');
         $this->tube = $this->getContainer()->getParameter('unified_report_files_tube');
-        $this->watchRoot = $this->getContainer()->getParameter('watch_root');
-        $this->archivedFiles = $this->getContainer()->getParameter('processed_archived_files');
 
-        if (!file_exists($this->watchRoot) || !is_dir($this->watchRoot) ||
-            !file_exists($this->archivedFiles) || !is_dir($this->archivedFiles)
-        ) {
-            $this->logger->error(sprintf('either %s or %s does not exist', $this->watchRoot, $this->archivedFiles));
-            throw new \InvalidArgumentException(sprintf('either %s or %s or %s does not exist', $this->watchRoot, $this->archivedFiles));
+        $this->watchRoot = $this->getFileFullPath($this->getContainer()->getParameter('watch_root'));
+        $this->archivedFiles = $this->getFileFullPath($this->getContainer()->getParameter('processed_archived_files'));
+
+        if (!is_dir($this->watchRoot)) {
+            mkdir($this->watchRoot);
+        }
+
+        if (!is_dir($this->archivedFiles)) {
+            mkdir($this->archivedFiles);
+        }
+
+        if (!is_readable($this->watchRoot)) {
+            throw new \Exception(sprintf('Watch root is not readable. The full path is %s', $this->watchRoot));
+        }
+
+        if (!is_writable($this->archivedFiles)) {
+            throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->watchRoot));
         }
 
         $ttr = (int)$this->getContainer()->getParameter('pheanstalk_ttr');
@@ -59,6 +69,17 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
 
         $this->createJob($newFiles, $this->tube, $ttr, $output);
+
+        $this->logger->info('Complete directory process');
+    }
+
+    protected function getFileFullPath($filePath)
+    {
+        $symfonyAppDir = $this->getContainer()->getParameter('kernel.root_dir');
+        $isRelativeToProjectRootDir = (strpos($filePath, './') === 0 || strpos($filePath, '/') !== 0);
+        $dataPath = $isRelativeToProjectRootDir ? sprintf('%s/%s', rtrim($symfonyAppDir, '/app'), ltrim($filePath, './')) : $filePath;
+
+        return $dataPath;
     }
 
     protected function getNewFiles(&$duplicateFileCount = 0)
@@ -111,8 +132,11 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
 
             $lastSlashPosition = strrpos($fileFullPath, '/');
-            $pathToExtract = substr($fileFullPath, 0, $lastSlashPosition);
-            $res = $zip->extractTo($pathToExtract);
+
+            $targetFile = $this->getFolderToExtractFile($fileFullPath);
+            $this->logger->info(sprintf('Extracting file %s to %s', $fileFullPath, $targetFile));
+
+            $res = $zip->extractTo($targetFile);
             if ($res === FALSE) {
                 $this->logger->error(sprintf('Failed to unzip the file %s', $fileFullPath));
             }
@@ -120,8 +144,33 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $zip->close();
 
             // move to archive folder
-            rename($fileFullPath, sprintf('%s/%s', $this->archivedFiles, substr($fileFullPath, $lastSlashPosition + 1)));
+            $this->logger->info(sprintf('Moving file %s to archived', $fileFullPath));
+
+            $fileName = substr($fileFullPath, $lastSlashPosition + 1);
+            $archived = sprintf('%s/%s', $this->archivedFiles, $fileName);
+            rename($fileFullPath, $archived);
         }
+    }
+
+    protected function getFolderToExtractFile($zipFile)
+    {
+        $targetFile = rtrim($zipFile, '.zip');
+        $newTargetFile = $targetFile;
+
+        if (!is_dir($targetFile)) {
+            if (file_exists($newTargetFile)) {
+                $i = 1;
+                do {
+
+                    $newTargetFile = sprintf('%s(%d)', $targetFile, $i);
+                }
+                while(file_exists($newTargetFile));
+            }
+
+            mkdir($newTargetFile);
+        }
+
+        return $newTargetFile;
     }
 
     protected function createJob(array $fileList, $tube, $ttr)
@@ -167,15 +216,15 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 $importData['date'] = $reportStartDate->format('Y-m-d');
             }
 
-            $pheanstalk
-                ->useTube($tube)
-                ->put(
-                    json_encode($importData),
-                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
-                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
-                    $ttr
-                )
-            ;
+//            $pheanstalk
+//                ->useTube($tube)
+//                ->put(
+//                    json_encode($importData),
+//                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
+//                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
+//                    $ttr
+//                )
+//            ;
 
             $this->logger->info(sprintf('Job is created for file %s', $filePath));
         }

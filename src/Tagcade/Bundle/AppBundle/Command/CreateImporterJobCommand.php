@@ -211,8 +211,13 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $reportStartDate = \DateTime::createFromFormat('Ymd', $dates[1]);
             $reportEndDate = \DateTime::createFromFormat('Ymd', $dates[2]);
 
+            if (!$reportStartDate instanceof \DateTime || !$reportEndDate instanceof \DateTime) {
+                $this->logger->error(sprintf('Not a valid path structure to file. Expect to have structure /path/to/publishers/{id}/{partnerCName}/YYYYMMDD-YYYYMMDD-YYYYMMDD. The file is %s', $filePath));
+                continue;
+            }
+
             $importData = ['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName];
-            if ($reportStartDate == $reportEndDate) {
+            if ($reportStartDate->format('Ymd') == $reportEndDate->format('Ymd')) {
                 $importData['date'] = $reportStartDate->format('Y-m-d');
             }
 

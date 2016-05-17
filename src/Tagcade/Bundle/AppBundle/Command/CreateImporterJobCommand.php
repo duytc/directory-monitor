@@ -8,13 +8,21 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Tagcade\Entity\Core\QueuedFile;
-use Tagcade\Repository\Core\QueuedFileRepositoryInterface;
 use ZipArchive;
 
 class CreateImporterJobCommand extends ContainerAwareCommand
 {
     const DIR_MIN_DEPTH_LEVELS = 2;
+
+    /**
+     * @var LoggerInterface
+     */
+    protected $logger;
+    protected $tube;
+    protected $watchRoot;
+    protected $archivedFiles;
+    protected $ttr;
+
 
     protected function configure()
     {
@@ -26,16 +34,16 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $logger = $this->getContainer()->get('logger');
-        $tube = $this->getContainer()->getParameter('unified_report_files_tube');
-        $watchRoot = $this->getContainer()->getParameter('watch_root');
-        $processedArchivedFiles = $this->getContainer()->getParameter('processed_archived_files');
+        $this->logger = $this->getContainer()->get('logger');
+        $this->tube = $this->getContainer()->getParameter('unified_report_files_tube');
+        $this->watchRoot = $this->getContainer()->getParameter('watch_root');
+        $this->archivedFiles = $this->getContainer()->getParameter('processed_archived_files');
 
-        if (!file_exists($watchRoot) || !is_dir($watchRoot) ||
-            !file_exists($processedArchivedFiles) || !is_dir($processedArchivedFiles)
+        if (!file_exists($this->watchRoot) || !is_dir($this->watchRoot) ||
+            !file_exists($this->archivedFiles) || !is_dir($this->archivedFiles)
         ) {
-            $logger->error(sprintf('either %s or %s does not exist', $watchRoot, $processedArchivedFiles));
-            throw new \InvalidArgumentException(sprintf('either %s or %s or %s does not exist', $watchRoot, $processedArchivedFiles));
+            $this->logger->error(sprintf('either %s or %s does not exist', $this->watchRoot, $this->archivedFiles));
+            throw new \InvalidArgumentException(sprintf('either %s or %s or %s does not exist', $this->watchRoot, $this->archivedFiles));
         }
 
         $ttr = (int)$this->getContainer()->getParameter('pheanstalk_ttr');
@@ -43,21 +51,29 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $ttr = \Pheanstalk\PheanstalkInterface::DEFAULT_TTR;
         }
 
-        /**
-         * @var QueuedFileRepositoryInterface $queuedFileRepository
-         */
-        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.queued_file');
+        $this->ttr = $ttr;
 
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
-        );
+        $duplicateFileCount = 0;
+        $newFiles = $this->getNewFiles($duplicateFileCount);
 
+        $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
+
+        $this->createJob($newFiles, $this->tube, $ttr, $output);
+    }
+
+    protected function getNewFiles(&$duplicateFileCount = 0)
+    {
         // process zip files
-        $this->processZipFiles($files, $watchRoot, $processedArchivedFiles, $logger);
+        $this->extractZipFilesIfAny();
+
+        // get all files include the ones in zip
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
+        );
 
         $fileList = [];
         $duplicateFileCount = 0;
-        foreach($files as $file) {
+        foreach ($files as $file) {
             /** @var \SplFileInfo $file */
             $fileFullPath = $file->getRealPath();
             if (!is_file($fileFullPath)) {
@@ -65,11 +81,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
 
             $md5 = hash_file('md5', $fileFullPath);
-            $queuedFile = $queuedFileRepository->findByHash($md5);
-            if ($queuedFile instanceof QueuedFile) {
-                continue;
-            }
-
             if (!array_key_exists($md5, $fileList)) {
                 $fileList[$md5] = $fileFullPath;
             }
@@ -78,13 +89,14 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             }
         }
 
-        $output->writeln(sprintf('Found %d new files and other %d duplications', count($fileList), $duplicateFileCount));
-
-        $this->createJob($fileList, $tube, $ttr, $output);
+        return $fileList;
     }
 
-    protected function processZipFiles($files, $watchRoot, $processedArchivedFiles, LoggerInterface $logger)
+    protected function extractZipFilesIfAny()
     {
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
+        );
         /** @var \SplFileInfo $file */
         foreach ($files as $file) {
             $fileFullPath = $file->getRealPath();
@@ -92,86 +104,66 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            if ($this->endsWith($fileFullPath, '.zip') === FALSE) {
+            $zip = new ZipArchive();
+            $openStatus = $zip->open($fileFullPath);
+            if ($openStatus !== true) {
                 continue;
             }
 
-            // Extract network name and publisher id from file path
-            $logger->info(sprintf('processing zip file %s', $fileFullPath));
-
-            $fileRelativePath =  trim(str_replace($watchRoot, '', $fileFullPath), '/');
-            $dirs = array_reverse(explode('/', $fileRelativePath));
-            if(!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
-                $logger->info(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $fileFullPath));
-                continue;
-            }
-
-            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
-            $partnerCName = array_pop($dirs);
-            $dates = array_pop($dirs);
-
-            $extractTo = join('/', array($watchRoot, $publisherId, $partnerCName, $dates));
-            $res = $this->unzip($fileFullPath, $extractTo);
-
+            $lastSlashPosition = strrpos($fileFullPath, '/');
+            $pathToExtract = substr($fileFullPath, 0, $lastSlashPosition);
+            $res = $zip->extractTo($pathToExtract);
             if ($res === FALSE) {
-                $logger->error(sprintf('Failed to unzip the file %s', $fileFullPath));
+                $this->logger->error(sprintf('Failed to unzip the file %s', $fileFullPath));
             }
 
-            $newName = join('/', array ($processedArchivedFiles, $publisherId, $partnerCName, $dates));
+            $zip->close();
 
-            if (file_exists($newName) === FALSE) {
-                mkdir($newName, $mode = 0777, $recursive = true);
-            }
-
-            rename($fileFullPath, join('/', array($newName, $file->getBasename())));
+            // move to archive folder
+            rename($fileFullPath, sprintf('%s/%s', $this->archivedFiles, substr($fileFullPath, $lastSlashPosition + 1)));
         }
     }
 
-    protected function createJob(array $fileList, $tube, $ttr, OutputInterface $output)
+    protected function createJob(array $fileList, $tube, $ttr)
     {
-        $watchRoot = $this->getContainer()->getParameter('watch_root');
-        /**
-         * @var QueuedFileRepositoryInterface $queuedFileRepository
-         */
-        $queuedFileRepository = $this->getContainer()->get('tagcade_app.repository.queued_file');
         /**
          * @var PheanstalkInterface $pheanstalk
          */
         $pheanstalk = $this->getContainer()->get('leezy.pheanstalk.primary');
         foreach ($fileList as $md5 => $filePath) {
-            $fileRelativePath =  trim(str_replace($watchRoot, '', $filePath), '/');
+            $fileRelativePath =  trim(str_replace($this->watchRoot, '', $filePath), '/');
             // Extract network name and publisher id from file path
             $dirs = array_reverse(explode('/', $fileRelativePath));
 
             if(!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
-                $output->writeln(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $filePath));
+                $this->logger->info(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $filePath));
                 continue;
             }
 
             $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
             if (!$publisherId) {
-                $output->writeln(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
+                $this->logger->info(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
                 continue;
             }
 
             $partnerCName = array_pop($dirs);
             if (empty($partnerCName)) {
-                $output->writeln(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
+                $this->logger->error(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
                 continue;
             }
 
             $dates = array_pop($dirs);
             $dates = explode('-', $dates);
             if (count($dates) < 3) {
-                throw new \Exception('Invalid folder containing csv file. It should has format Ymd-Ymd-Ymd (execution date, report start date, report end date)');
+                $this->logger->error(sprintf('Invalid folder containing csv file. It should has format Ymd-Ymd-Ymd (execution date, report start date, report end date). The file was %s', $filePath));
+                continue;
             }
 
-            $fetchExeucutionDate = \DateTime::createFromFormat('Ymd', $dates[0]);
             $reportStartDate = \DateTime::createFromFormat('Ymd', $dates[1]);
             $reportEndDate = \DateTime::createFromFormat('Ymd', $dates[2]);
 
             $importData = ['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName];
-            if ($dates[1] == $dates[2]) {
+            if ($reportStartDate == $reportEndDate) {
                 $importData['date'] = $reportStartDate->format('Y-m-d');
             }
 
@@ -184,41 +176,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                     $ttr
                 )
             ;
-
-            try {
-                $queuedFileRepository->createNew($md5, $filePath);
-            }
-            catch(\Exception $e) {
-                $output->writeln($e->getMessage());
-            }
         }
-    }
-
-    protected function isValidDateString($dateString)
-    {
-        $dateParts = date_parse($dateString);
-
-        return ($dateParts["error_count"] == 0 && checkdate($dateParts["month"], $dateParts["day"], $dateParts["year"]));
-    }
-
-    protected function unzip($filePath, $extractTo)
-    {
-        $zip = new ZipArchive;
-        $res = $zip->open($filePath);
-        if ($res === TRUE) {
-            $res = $zip->extractTo($extractTo);
-            $zip->close();
-        }
-
-        return $res;
-    }
-
-    protected function endsWith($string, $needle)
-    {
-        $strLen = strlen($string);
-        $needleLen = strlen($needle);
-        if ($needleLen > $strLen) return false;
-
-        return substr_compare($string, $needle, $strLen - $needleLen, $needleLen) === 0;
     }
 }

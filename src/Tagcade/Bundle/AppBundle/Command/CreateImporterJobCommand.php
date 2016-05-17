@@ -216,15 +216,15 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 $importData['date'] = $reportStartDate->format('Y-m-d');
             }
 
-//            $pheanstalk
-//                ->useTube($tube)
-//                ->put(
-//                    json_encode($importData),
-//                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
-//                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
-//                    $ttr
-//                )
-//            ;
+            $pheanstalk
+                ->useTube($tube)
+                ->put(
+                    json_encode($importData),
+                    \Pheanstalk\PheanstalkInterface::DEFAULT_PRIORITY,
+                    \Pheanstalk\PheanstalkInterface::DEFAULT_DELAY,
+                    $ttr
+                )
+            ;
 
             $this->logger->info(sprintf('Job is created for file %s', $filePath));
         }

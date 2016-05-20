@@ -34,11 +34,12 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $this->logger = $this->getContainer()->get('logger');
-        $this->tube = $this->getContainer()->getParameter('unified_report_files_tube');
+        $container = $this->getContainer();
+        $this->logger = $container->get('logger');
+        $this->tube = $container->getParameter('unified_report_files_tube');
 
-        $this->watchRoot = $this->getFileFullPath($this->getContainer()->getParameter('watch_root'));
-        $this->archivedFiles = $this->getFileFullPath($this->getContainer()->getParameter('processed_archived_files'));
+        $this->watchRoot = $this->getFileFullPath($container->getParameter('watch_root'));
+        $this->archivedFiles = $this->getFileFullPath($container->getParameter('processed_archived_files'));
 
         if (!is_dir($this->watchRoot)) {
             mkdir($this->watchRoot);
@@ -56,7 +57,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->watchRoot));
         }
 
-        $ttr = (int)$this->getContainer()->getParameter('pheanstalk_ttr');
+        $ttr = (int)$container->getParameter('pheanstalk_ttr');
         if ($ttr < 1) {
             $ttr = \Pheanstalk\PheanstalkInterface::DEFAULT_TTR;
         }
@@ -64,7 +65,12 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $this->ttr = $ttr;
 
         $duplicateFileCount = 0;
-        $newFiles = $this->getNewFiles($duplicateFileCount);
+        $supportedExtensions = $container->getParameter('supportedExtensions');
+        if (!is_array($supportedExtensions)) {
+            throw new \Exception('Invalid configuration of param supportedExtensions');
+        }
+
+        $newFiles = $this->getNewFiles($duplicateFileCount, $supportedExtensions);
 
         $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
 
@@ -82,7 +88,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         return $dataPath;
     }
 
-    protected function getNewFiles(&$duplicateFileCount = 0)
+    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = ['csv'])
     {
         // process zip files
         $this->extractZipFilesIfAny();
@@ -101,6 +107,10 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
+            if (!$this->supportFile($fileFullPath, $supportedExtensions)) {
+                continue;
+            }
+
             $md5 = hash_file('md5', $fileFullPath);
             if (!array_key_exists($md5, $fileList)) {
                 $fileList[$md5] = $fileFullPath;
@@ -111,6 +121,23 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         }
 
         return $fileList;
+    }
+
+    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv'])
+    {
+        if (empty($fileFullPath)) {
+            return false;
+        }
+
+        foreach ($supportedExtensions as $ext) {
+            $expectPositionOfExt = strlen($fileFullPath) - strlen($ext);
+            $foundPositionOfExt = strrpos($fileFullPath, $ext);
+            if ($foundPositionOfExt !== false && $expectPositionOfExt === $foundPositionOfExt) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function extractZipFilesIfAny()

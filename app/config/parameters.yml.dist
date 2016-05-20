@@ -12,3 +12,7 @@ parameters:
 
     processed_archived_files: ./data/processed
     unified_report_files_tube: unified-report-files
+
+    supportedExtensions:
+        - csv
+        - xlsx

@@ -18,7 +18,8 @@
         "incenteev/composer-parameter-handler": "~2.0",
         "leezy/pheanstalk-bundle": "~3.0",
         "gedmo/doctrine-extensions": "dev-master",
-        "stof/doctrine-extensions-bundle": "~1.1@dev"
+        "stof/doctrine-extensions-bundle": "~1.1@dev",
+        "liuggio/excelbundle": "^2.0"
     },
     "require-dev": {
         "sensio/generator-bundle": "~2.3",

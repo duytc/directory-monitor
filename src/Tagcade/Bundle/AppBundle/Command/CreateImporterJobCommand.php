@@ -256,10 +256,8 @@ class CreateImporterJobCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $importData = ['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName];
-            if ($reportStartDate->format('Ymd') == $reportEndDate->format('Ymd')) {
-                $importData['date'] = $reportStartDate->format('Y-m-d');
-            }
+            $importData = ['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName,
+                'start-date' => $reportStartDate->format('Y-m-d'), 'end-date' => $reportEndDate->format('Y-m-d')];
 
             $pheanstalk
                 ->useTube($tube)

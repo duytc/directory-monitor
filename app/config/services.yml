@@ -1,8 +1,2 @@
 # Learn more about services, parameters and containers at
 # http://symfony.com/doc/current/book/service_container.html
-services:
-    tagcade_directory_monitor.service.excel_converter_service:
-        class: Tagcade\Service\Excel2CSVConverter
-        arguments:
-            - %watch_root%
-            - %processed_archived_files%

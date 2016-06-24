@@ -15,4 +15,5 @@ parameters:
 
     supportedExtensions:
         - csv
+        - xls
         - xlsx

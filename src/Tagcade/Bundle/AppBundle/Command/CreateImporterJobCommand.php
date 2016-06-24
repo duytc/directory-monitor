@@ -2,13 +2,11 @@
 
 namespace Tagcade\Bundle\AppBundle\Command;
 
-
 use Pheanstalk\PheanstalkInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Tagcade\Service\Excel2CSVConverterInterface;
 use ZipArchive;
 
 class CreateImporterJobCommand extends ContainerAwareCommand
@@ -24,7 +22,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     protected $archivedFiles;
     protected $ttr;
 
-
     protected function configure()
     {
         $this
@@ -36,7 +33,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $container = $this->getContainer();
-        $converter = $container->get('tagcade_directory_monitor.service.excel_converter_service');
         $this->logger = $container->get('logger');
         $this->tube = $container->getParameter('unified_report_files_tube');
 
@@ -72,7 +68,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             throw new \Exception('Invalid configuration of param supportedExtensions');
         }
 
-        $newFiles = $this->getNewFiles($duplicateFileCount, $supportedExtensions, $converter);
+        $newFiles = $this->getNewFiles($duplicateFileCount, $supportedExtensions);
 
         $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
 
@@ -90,17 +86,10 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         return $dataPath;
     }
 
-    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = ['csv'], Excel2CSVConverterInterface $converter)
+    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = ['csv', 'xls', 'xlsx'])
     {
         // process zip files
         $this->extractZipFilesIfAny();
-
-        // get all files include the ones in zip
-        $files = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
-        );
-
-        $converter->convert($files);
 
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
@@ -131,7 +120,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         return $fileList;
     }
 
-    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv'])
+    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv', 'xls', 'xlsx'])
     {
         if (empty($fileFullPath)) {
             return false;

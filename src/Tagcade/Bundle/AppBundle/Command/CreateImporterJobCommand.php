@@ -72,7 +72,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
         $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
 
-        $this->createJob($newFiles, $this->tube, $ttr, $output);
+        $this->createJob($newFiles, $this->tube, $ttr);
 
         $this->logger->info('Complete directory process');
     }

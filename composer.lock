@@ -4,8 +4,8 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "4a6039ead69ee899c20bc5140653fd0c",
-    "content-hash": "fd30f32bd50ef6bf6fcc039ab4c77ce5",
+    "hash": "2b71dc1beba04fb05e024cf6da012e36",
+    "content-hash": "92e1ec4d3868d5ba072ab9c3abc24842",
     "packages": [
         {
             "name": "behat/transliterator",
@@ -822,7 +822,7 @@
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Atlantic18/DoctrineExtensions/zipball/87cf5df2c9292d6c5fff337703ae48c7d1bb382f",
+                "url": "https://api.github.com/repos/Atlantic18/DoctrineExtensions/zipball/b034ce065759ffb74179f9ce3873473e12854164",
                 "reference": "b034ce065759ffb74179f9ce3873473e12854164",
                 "shasum": ""
             },
@@ -991,6 +991,43 @@
                 "sql"
             ],
             "time": "2014-01-12 16:20:24"
+        },
+        {
+            "name": "jowy/rest-client",
+            "version": "v0.1.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Atriedes/rest-client.git",
+                "reference": "d29562a025bc70a1656bbca039cce40b1d40568d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Atriedes/rest-client/zipball/d29562a025bc70a1656bbca039cce40b1d40568d",
+                "reference": "d29562a025bc70a1656bbca039cce40b1d40568d",
+                "shasum": ""
+            },
+            "require": {
+                "ext-curl": "*",
+                "php": ">=5.3.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-0": {
+                    "RestClient": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Prasetyo Wicaksono",
+                    "email": "prasetyo@nanomit.es"
+                }
+            ],
+            "description": "PHP 5.3+ Rest Client",
+            "time": "2015-10-11 01:26:30"
         },
         {
             "name": "leezy/pheanstalk-bundle",
@@ -1509,7 +1546,7 @@
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/stof/StofDoctrineExtensionsBundle/zipball/4e7499d25dc5d0862da09fa8e336164948a29a25",
+                "url": "https://api.github.com/repos/stof/StofDoctrineExtensionsBundle/zipball/6672ca37fe19a8e2a8ae52a93a7163e1b00ef7d5",
                 "reference": "6672ca37fe19a8e2a8ae52a93a7163e1b00ef7d5",
                 "shasum": ""
             },

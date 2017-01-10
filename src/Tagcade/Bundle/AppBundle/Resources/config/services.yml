@@ -1,23 +1,22 @@
-parameters:
-    tagcade.entity.imported_file.class: Tagcade\Entity\Core\ImportedFile
-    tagcade.entity.queued_file.class: Tagcade\Entity\Core\QueuedFile
+#parameters:
+#    tagcade.entity.imported_file.class: Tagcade\Entity\Core\ImportedFile
 
 services:
-    tagcade_app.repository.imported_file:
-        class: Tagcade\Repository\Core\ImportedFileRepository
-        factory_service: doctrine.orm.entity_manager
-        factory_method: getRepository
+    rest.client:
+        class: RestClient\CurlRestClient
+        public: false
+
+    tagcade_app.service.tagcade.rest_client:
+        class: Tagcade\Service\TagcadeRestClient
         arguments:
-            - %tagcade.entity.imported_file.class%
-
-    tagcade_app.repository.queued_file:
-        class: Tagcade\Repository\Core\ImportedFileRepository
-        factory_service: doctrine.orm.entity_manager
-        factory_method: getRepository
-        arguments:
-            - %tagcade.entity.queued_file.class%
-
-
+            - @rest.client
+            - %tagcade_user_name%
+            - %tagcade_user_password%
+            - %tagcade_get_token_url%
+            - %ur_get_data_sources_by_integration_url%
+            - %ur_get_data_sources_by_email_url%
+            - %ur_receive_file_via_email_webhook_url%
+            - %ur_receive_file_via_fetcher_url%
 
 
 

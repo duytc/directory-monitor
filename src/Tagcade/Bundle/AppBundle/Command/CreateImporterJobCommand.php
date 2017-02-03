@@ -24,7 +24,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
     /** @var LoggerInterface */
     protected $logger;
-    protected $tube;
     protected $emailTemplate; // e.g pub$PUBLISHER_ID$.$TOKEN$@unified-report.dev => will be: pub2.28957425794274267073260979346@unifiedreport.dev
     protected $watchRoot;
     protected $archivedFiles;
@@ -45,7 +44,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $container = $this->getContainer();
         $this->restClient = $container->get('tagcade_app.service.tagcade.rest_client');
         $this->logger = $container->get('logger');
-        $this->tube = $container->getParameter('unified_report_files_tube');
         $this->emailTemplate = $container->getParameter('ur_email_template');
         if (strpos($this->emailTemplate, '$PUBLISHER_ID$') < 0 || strpos($this->emailTemplate, '$TOKEN$') < 0) {
             throw new \Exception(sprintf('ur_email_template %s is invalid config: missing $PUBLISHER_ID$ or $TOKEN$ macro', $this->emailTemplate));
@@ -86,9 +84,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $newFiles = $this->getNewFiles($duplicateFileCount, $supportedExtensions);
 
         $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
-
-        /* put job to unified reports queue */
-        // $this->createJob($newFiles, $this->tube, $ttr); // use for old system only, remove when stable in new system
 
         /* post file to unified reports api */
         $this->postFilesToUnifiedReportApi($newFiles);
@@ -216,73 +211,6 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         }
 
         return $newTargetFile;
-    }
-
-    /**
-     * create job in queue
-     * TODO: for old system only. Remove when stable in new system
-     *
-     * @param array $fileList
-     * @param $tube
-     * @param $ttr
-     */
-    protected function createJob(array $fileList, $tube, $ttr)
-    {
-        /**
-         * @var PheanstalkInterface $pheanstalk
-         */
-        $pheanstalk = $this->getContainer()->get('leezy.pheanstalk.primary');
-        foreach ($fileList as $md5 => $filePath) {
-            $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
-            // Extract network name and publisher id from file path
-            $dirs = array_reverse(explode('/', $fileRelativePath));
-
-            if (!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
-                $this->logger->info(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $filePath));
-                continue;
-            }
-
-            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
-            if (!$publisherId) {
-                $this->logger->info(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
-                continue;
-            }
-
-            $partnerCName = array_pop($dirs);
-            if (empty($partnerCName)) {
-                $this->logger->error(sprintf("Can not extract PartnerCName from file path %s!!!\n", $filePath));
-                continue;
-            }
-
-            $dates = array_pop($dirs);
-            $dates = explode('-', $dates);
-            if (count($dates) < 3) {
-                $this->logger->error(sprintf('Invalid folder containing csv file. It should has format Ymd-Ymd-Ymd (execution date, report start date, report end date). The file was %s', $filePath));
-                continue;
-            }
-
-            $reportStartDate = \DateTime::createFromFormat('Ymd', $dates[1]);
-            $reportEndDate = \DateTime::createFromFormat('Ymd', $dates[2]);
-
-            if (!$reportStartDate instanceof \DateTime || !$reportEndDate instanceof \DateTime) {
-                $this->logger->error(sprintf('Not a valid path structure to file. Expect to have structure /path/to/publishers/{id}/{partnerCName}/YYYYMMDD-YYYYMMDD-YYYYMMDD. The file is %s', $filePath));
-                continue;
-            }
-
-            $importData = ['filePath' => $filePath, 'publisher' => $publisherId, 'partnerCName' => $partnerCName,
-                'start-date' => $reportStartDate->format('Y-m-d'), 'end-date' => $reportEndDate->format('Y-m-d')];
-
-            $pheanstalk
-                ->useTube($tube)
-                ->put(
-                    json_encode($importData),
-                    PheanstalkInterface::DEFAULT_PRIORITY,
-                    PheanstalkInterface::DEFAULT_DELAY,
-                    $ttr
-                );
-
-            $this->logger->info(sprintf('Job is created for file %s', $filePath));
-        }
     }
 
     /**

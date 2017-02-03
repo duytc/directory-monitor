@@ -11,11 +11,9 @@ parameters:
     pheanstalk_primary_host: 127.0.0.1
 
     processed_archived_files: ./data/processed
-    unified_report_files_tube: ur-api-worker
     tagcade_user_name: admin
     tagcade_user_password: '123456'
     tagcade_get_token_url: 'http://api.tagcade.dev/app_debug.php/api/v1/getToken'
-    tagcade_get_tag_url: 'http://api.tagcade.dev/app_dev.php/api/v1/partners/{partner_id}/tctags'
     ur_get_data_sources_by_integration_url: 'http://api.unified-reports.dev/app_dev.php/api/v1/datasources/byintegration'
     ur_get_data_sources_by_email_url: 'http://api.unified-reports.dev/app_dev.php/api/v1/datasources/byemail'
     ur_receive_file_via_email_webhook_url: 'http://api.unified-reports.dev/app_dev.php/api/v1/datasources/viaemailhook'

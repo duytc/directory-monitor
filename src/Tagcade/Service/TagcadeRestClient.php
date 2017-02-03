@@ -95,12 +95,11 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         $dataSources = json_decode($dataSources, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('json decoding error');
+            throw new \Exception('json decoding error when get List DataSources By Email');
         }
 
         if (array_key_exists('code', $dataSources) && $dataSources['code'] != 200) {
-            // failed to get data sources
-            return false;
+            throw new \Exception(sprintf('failed to get List DataSources By Email, code %d', $dataSources['code']));
         }
 
         return $dataSources;
@@ -129,12 +128,11 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         $dataSources = json_decode($dataSources, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('json decoding error');
+            throw new \Exception('json decoding error when get List DataSources By Integration');
         }
 
         if (array_key_exists('code', $dataSources) && $dataSources['code'] != 200) {
-            // failed to get data sources
-            return false;
+            throw new \Exception(sprintf('failed to get List DataSources By Integration, code %d', $dataSources['code']));
         }
 
         return $dataSources;
@@ -192,7 +190,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
 
         if (array_key_exists('code', $postResult) && $postResult['code'] != 200) {
             // post failed to data source
-            return sprintf('Posted file %s fail to unified report api for %d data sources', $file, count($dataSourceIds));
+            return sprintf('Posted file %s fail to unified report api for %d data sources, code %d', $file, count($dataSourceIds), $postResult['code']);
         }
 
         $numbSuccess = 0;

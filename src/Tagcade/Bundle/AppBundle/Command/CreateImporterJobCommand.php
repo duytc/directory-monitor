@@ -53,11 +53,15 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $this->archivedFiles = $this->getFileFullPath($container->getParameter('processed_archived_files'));
 
         if (!is_dir($this->watchRoot)) {
-            mkdir($this->watchRoot);
+            if (!mkdir($this->watchRoot)) {
+                throw new \Exception(sprintf('Can not create watchRoot directory %s', $this->watchRoot));
+            }
         }
 
         if (!is_dir($this->archivedFiles)) {
-            mkdir($this->archivedFiles);
+            if (!mkdir($this->archivedFiles)) {
+                throw new \Exception(sprintf('Can not create archivedFiles directory %s', $this->archivedFiles));
+            }
         }
 
         if (!is_readable($this->watchRoot)) {
@@ -227,30 +231,30 @@ class CreateImporterJobCommand extends ContainerAwareCommand
             $dirs = array_reverse(explode('/', $fileRelativePath));
 
             if (!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
-                $this->logger->info(sprintf('Not a valid file location at %s. It should be under networkName/publisherId/...', $filePath));
+                $this->logger->info(sprintf('Not a valid file location at %s. It should be under publisherId/partnerCNameOrToken...', $filePath));
                 continue;
             }
 
             $dirViaModule = array_pop($dirs);
             if (empty($dirViaModule)) {
-                $this->logger->error(sprintf("Can not extract viaModule from file path %s!!!\n", $filePath));
+                $this->logger->error(sprintf('Can not extract viaModule from file path %s!!!', $filePath));
                 continue;
             }
 
             if (!in_array($dirViaModule, self::$SUPPORTED_DIR_VIA_MODULE_MAP)) {
-                $this->logger->error(sprintf("Not support for outside of viaModule %s!!!\n", implode(' and ', self::$SUPPORTED_DIR_VIA_MODULE_MAP)));
+                $this->logger->error(sprintf('Not support for outside of viaModule %s!!!', implode(' and ', self::$SUPPORTED_DIR_VIA_MODULE_MAP)));
                 continue;
             }
 
             $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
             if (!$publisherId) {
-                $this->logger->info(sprintf("Can not extract Publisher from file path %s!!!\n", $filePath));
+                $this->logger->info(sprintf('Can not extract Publisher from file path %s!!!', $filePath));
                 continue;
             }
 
             $partnerCNameOrToken = array_pop($dirs);
             if (empty($partnerCNameOrToken)) {
-                $this->logger->error(sprintf("Can not extract PartnerCName or Token from file path %s!!!\n", $filePath));
+                $this->logger->error(sprintf('Can not extract PartnerCName or Token from file path %s!!!', $filePath));
                 continue;
             }
 
@@ -263,6 +267,10 @@ class CreateImporterJobCommand extends ContainerAwareCommand
 
                 /* get list data sources */
                 $dataSourceIds = $this->getDataSourceIdsByEmail($publisherId, $email);
+                if (!is_array($dataSourceIds)) {
+                    $this->logger->warning(sprintf('No data sources found for this publisher %d and email %s', $publisherId, $email));
+                    continue;
+                }
 
                 $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $dataSourceIds);
 

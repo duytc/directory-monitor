@@ -194,6 +194,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         }
 
         $numbSuccess = 0;
+        $errorDetail = '';
         foreach ($postResult as $postDSResult) {
             if (!is_array($postDSResult) || count($postDSResult) < 1) {
                 continue;
@@ -205,10 +206,28 @@ class TagcadeRestClient implements TagcadeRestClientInterface
                 continue;
             }
 
-            $numbSuccess += (bool)$postDSResult_i['status'] ? 1 : 0;
+            $isPostSuccess = (bool)$postDSResult_i['status'];
+            $numbSuccess += $isPostSuccess ? 1 : 0;
+
+            // get message detail when fail
+            if (!$isPostSuccess) {
+                $dataSourceId = (array_key_exists('dataSource', $postDSResult_i))
+                    ? $postDSResult_i['dataSource']
+                    : 'unknown';
+
+                $message = (array_key_exists('message', $postDSResult_i))
+                    ? $postDSResult_i['message']
+                    : 'unknown';
+                $errorDetail = $errorDetail . sprintf('[dataSource: %s, error: %s]', $dataSourceId, $message);
+            }
         }
         $numbFail = count($dataSourceIds) - $numbSuccess;
 
-        return sprintf('Posted file %s to unified report api: %d data sources successfully, %d data sources fail', $file, $numbSuccess, $numbFail);
+        return sprintf('Posted file %s to unified report api: %d data sources successfully, %d data sources fail. Error: %s',
+            $file,
+            $numbSuccess,
+            $numbFail,
+            ($numbFail > 0 ? $errorDetail : 'none')
+        );
     }
 }

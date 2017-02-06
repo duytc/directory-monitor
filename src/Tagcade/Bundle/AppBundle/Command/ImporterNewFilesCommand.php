@@ -8,10 +8,11 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Filesystem\LockHandler;
 use Tagcade\Service\TagcadeRestClientInterface;
 use ZipArchive;
 
-class CreateImporterJobCommand extends ContainerAwareCommand
+class ImporterNewFilesCommand extends ContainerAwareCommand
 {
     const DIR_MIN_DEPTH_LEVELS = 2;
     const DIR_VIA_MODULE_EMAIL_WEB_HOOK = 'email';
@@ -35,7 +36,7 @@ class CreateImporterJobCommand extends ContainerAwareCommand
     protected function configure()
     {
         $this
-            ->setName('tc:create-importer-job')
+            ->setName('tc:ur:import-new-files')
             ->setDescription('Scan for relevant files in pre-configured directory and post files to unified report api system');
     }
 
@@ -44,6 +45,14 @@ class CreateImporterJobCommand extends ContainerAwareCommand
         $container = $this->getContainer();
         $this->restClient = $container->get('tagcade_app.service.tagcade.rest_client');
         $this->logger = $container->get('logger');
+
+        // create the lock
+        $lock = new LockHandler('ur:post_files_to_unified_report_API');
+
+        if (!$lock->lock()) {
+            $this->logger->info(sprintf('%s: The command is already running in another process.', $this->getName()));
+            return;
+        }
         $this->emailTemplate = $container->getParameter('ur_email_template');
         if (strpos($this->emailTemplate, '$PUBLISHER_ID$') < 0 || strpos($this->emailTemplate, '$TOKEN$') < 0) {
             throw new \Exception(sprintf('ur_email_template %s is invalid config: missing $PUBLISHER_ID$ or $TOKEN$ macro', $this->emailTemplate));

@@ -28,7 +28,7 @@ End date: is the report end date
 3. Example of creating job for importer code base
 ---
 ```
-php app/console tc:create-importer-job
+php app/console tc:ur:import-new-files
 ```
 
 All new discovered files will be pushed into a queue for the worker to read and process.
@@ -41,4 +41,14 @@ php app/console tc:remove-imported-files
 ```
 
 This will remove all imported file from queue and also database
+
+5. Example of removing incompatible files
+---
+
+```
+php app/console tc:ur:remove-incompatible-files
+```
+Now we only accept extension .csv .xls .xlsx .json
+Other extensions will be ignored and can be remove with above command
+
 

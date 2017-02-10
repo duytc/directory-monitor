@@ -181,6 +181,11 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         $postResult = curl_exec($ch);
         curl_close($ch);
 
+        if ($this->checkIfHttp413($postResult)) {
+            // post failed to data source due to file too large
+            return sprintf('Posted file %s fail to unified report api for %d data sources, code %d (file too large)', $file, count($dataSourceIds), 413);
+        }
+
         $postResult = json_decode($postResult, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -229,5 +234,29 @@ class TagcadeRestClient implements TagcadeRestClientInterface
             $numbFail,
             ($numbFail > 0 ? $errorDetail : 'none')
         );
+    }
+
+    /**
+     * check if file too large (http code 413)
+     *
+     * @param string $postResult html response
+     * @return bool|int
+     */
+    private function checkIfHttp413($postResult)
+    {
+        /*
+         * <html>
+         * <head><title>413 Request Entity Too Large</title></head>
+         * <body bgcolor="white">
+         * <center><h1>413 Request Entity Too Large</h1></center>
+         * <hr><center>nginx/1.10.2</center>
+         * </body>
+         * </html>
+         */
+        if (empty($postResult) || !is_string($postResult)) {
+            return false;
+        }
+
+        return false !== strpos($postResult, '<head><title>413');
     }
 }

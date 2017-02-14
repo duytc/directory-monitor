@@ -113,7 +113,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         return $dataPath;
     }
 
-    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = ['csv', 'xls', 'xlsx'])
+    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = ['csv', 'xls', 'xlsx', 'meta'])
     {
         // process zip files
         $this->extractZipFilesIfAny();
@@ -122,6 +122,15 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
+        /**
+         * @var array $fileList, format as:
+         * [
+         *     <md5> => [
+         *         "filePath" => <file path>,
+         *         "fileName" => <file name>
+         *     ]
+         * ]
+         */
         $fileList = [];
         $duplicateFileCount = 0;
         foreach ($files as $file) {
@@ -135,18 +144,47 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $fileName = $file->getFilename();
             $md5 = hash_file('md5', $fileFullPath);
             if (!array_key_exists($md5, $fileList)) {
-                $fileList[$md5] = $fileFullPath;
+                $fileList[$md5] = [
+                    'filePath' => $fileFullPath,
+                    'fileName' => $fileName
+                ];
             } else {
                 $duplicateFileCount++;
             }
         }
 
-        return $fileList;
+        // organize all files into pair file-metadataFile
+        /**
+         * @var array $organizedFileList, format as:
+         * [
+         *     <file name> => [
+         *         "file" => <file path>,
+         *         "metadata" => <metadata file path>
+         *     ]
+         * ]
+         */
+        $organizedFileList = [];
+        foreach ($fileList as $md5 => $fileInfo) {
+            $filePath = $fileInfo['filePath'];
+            $fileName = $fileInfo['fileName'];
+
+            // check if end with .meta, so that is metadata file
+            if (strpos($fileName, '.meta') == (strlen($fileName) - 5)) { // 5 is length of '.meta'
+                $fileName = str_replace('.meta', '', $fileName);
+
+                $organizedFileList[$fileName]['metadata'] = $filePath;
+            } else {
+                $organizedFileList[$fileName]['file'] = $filePath;
+            }
+        }
+
+        return $organizedFileList;
     }
 
-    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv', 'xls', 'xlsx'])
+    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv', 'xls', 'xlsx', 'meta'])
     {
         if (empty($fileFullPath)) {
             return false;
@@ -233,7 +271,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      */
     private function postFilesToUnifiedReportApi(array $fileList)
     {
-        foreach ($fileList as $md5 => $filePath) {
+        foreach ($fileList as $fileName => $value) {
+            $filePath = $value['file'];
             $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
 
             // Extract network name and publisher id from file path
@@ -267,6 +306,17 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $metadataFilePath = $value['metadata'];
+            $metadata = [];
+            if (file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+                $metadata = file_get_contents($metadataFilePath);
+                $metadata = json_decode($metadata, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $metadata = [];
+                }
+            }
+
             /* post file to ur api for data sources */
             if ($dirViaModule == self::DIR_VIA_MODULE_EMAIL_WEB_HOOK) {
                 /* create email */
@@ -281,7 +331,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                     continue;
                 }
 
-                $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $dataSourceIds);
+                $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
 
                 $this->logger->info(sprintf('email %s: %s', $email, $postResult));
             } else if ($dirViaModule == self::DIR_VIA_MODULE_FETCHER) {
@@ -292,15 +342,18 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                     continue;
                 }
 
-                $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $dataSourceIds);
+                $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
 
                 $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult));
             }
 
             /* move file to processed folder */
-            $newFileToStore = $this->getProcessedFilePath($filePath, $publisherId, $partnerCNameOrToken, $this->archivedFiles);
-            $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
-            rename($filePath, $newFileToStore);
+            $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
+
+            /* also move metadata file (if existed) to processed folder */
+            if (file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+                $this->moveFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
+            }
         }
     }
 
@@ -360,6 +413,21 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         }
 
         return count($dataSourceIds) > 0 ? $dataSourceIds : false;
+    }
+
+    /**
+     * move file to processed dir
+     *
+     * @param $filePath
+     * @param $publisherId
+     * @param $partnerCNameOrToken
+     */
+    private function moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken)
+    {
+        $newFileToStore = $this->getProcessedFilePath($filePath, $publisherId, $partnerCNameOrToken, $this->archivedFiles);
+        $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
+
+        rename($filePath, $newFileToStore);
     }
 
     /**

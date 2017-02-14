@@ -141,23 +141,23 @@ class TagcadeRestClient implements TagcadeRestClientInterface
     /**
      * @inheritdoc
      */
-    public function postFileToURApiForDataSourcesViaEmailWebHook($file, $dataSourceIds)
+    public function postFileToURApiForDataSourcesViaEmailWebHook($file, array $metadata, $dataSourceIds)
     {
-        return $this->postFileToURApiForMultipleDataSources($file, $dataSourceIds, self::VIA_MODULE_EMAIL_WEB_HOOK);
+        return $this->postFileToURApiForMultipleDataSources($file, $metadata, $dataSourceIds, self::VIA_MODULE_EMAIL_WEB_HOOK);
     }
 
     /**
      * @inheritdoc
      */
-    public function postFileToURApiForDataSourcesViaFetcher($file, $dataSourceIds)
+    public function postFileToURApiForDataSourcesViaFetcher($file, array $metadata, $dataSourceIds)
     {
-        return $this->postFileToURApiForMultipleDataSources($file, $dataSourceIds, self::VIA_MODULE_FETCHER);
+        return $this->postFileToURApiForMultipleDataSources($file, $metadata, $dataSourceIds, self::VIA_MODULE_FETCHER);
     }
 
     /**
      * @inheritdoc
      */
-    public function postFileToURApiForMultipleDataSources($file, $dataSourceIds, $viaModule = self::VIA_MODULE_EMAIL_WEB_HOOK)
+    public function postFileToURApiForMultipleDataSources($file, array $metadata, $dataSourceIds, $viaModule = self::VIA_MODULE_EMAIL_WEB_HOOK)
     {
         /* get token */
         $header = array('Authorization: Bearer ' . $this->getToken());
@@ -171,6 +171,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, array(
             'ids' => json_encode($dataSourceIds),
+            'metadata' => json_encode($metadata),
             'file_content' => curl_file_create($file)
         ));
         curl_setopt($ch, CURLOPT_URL, $url);

@@ -35,15 +35,17 @@ interface TagcadeRestClientInterface
 
     /**
      * @param string $file file path
+     * @param array $metadata
      * @param string $dataSourceIds
      * @return array [code => <http code>, message => <mixed, message>]
      */
-    public function postFileToURApiForDataSourcesViaEmailWebHook($file, $dataSourceIds);
+    public function postFileToURApiForDataSourcesViaEmailWebHook($file, array $metadata, $dataSourceIds);
 
     /**
      * @param string $file file path
+     * @param array $metadata
      * @param string $dataSourceIds
      * @return array [code => <http code>, message => <mixed, message>]
      */
-    public function postFileToURApiForDataSourcesViaFetcher($file, $dataSourceIds);
+    public function postFileToURApiForDataSourcesViaFetcher($file, array $metadata, $dataSourceIds);
 }

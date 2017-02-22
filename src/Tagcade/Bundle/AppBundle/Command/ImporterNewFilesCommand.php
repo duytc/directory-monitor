@@ -178,6 +178,11 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 $organizedFileList[$fileName]['metadata'] = $filePath;
             } else {
                 $organizedFileList[$fileName]['file'] = $filePath;
+
+                // set default metadata value to `false` when not yet existed
+                if (!array_key_exists('metadata', $organizedFileList[$fileName])) {
+                    $organizedFileList[$fileName]['metadata'] = false;
+                }
             }
         }
 
@@ -308,7 +313,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             $metadataFilePath = $value['metadata'];
             $metadata = [];
-            if (file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+            if (is_string($metadataFilePath) && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
                 $metadata = file_get_contents($metadataFilePath);
                 $metadata = json_decode($metadata, true);
 

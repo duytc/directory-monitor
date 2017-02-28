@@ -49,6 +49,8 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
 
+        $this->deleteEmptyFolders($this->archivedFiles);
+        
         $incompatibleFiles = $this->getIncompatibleFiles($supportedExtensions);
         if (count($incompatibleFiles) == 0){
             $output->writeln('None incompatible file found. Complete directory process');

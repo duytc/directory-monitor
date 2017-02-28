@@ -21,8 +21,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
     private $getTokenUrl;
     private $getDataSourcesByIntegrationUrl;
     private $getDataSourcesByEmailUrl;
-    private $urReceiveFileViaEmailWebHookUrl;
-    private $urReceiveFileViaFetcherUrl;
+    private $urReceiveFileUrl;
 
     /**
      * store last token to save requests to api
@@ -34,7 +33,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
 
     function __construct(CurlRestClient $curl, $username, $password, $getTokenUrl,
                          $getDataSourcesByIntegrationUrl, $getDataSourcesByEmailUrl,
-                         $urReceiveFileViaEmailWebHookUrl, $urReceiveFileViaFetcherUrl)
+                         $urReceiveFileUrl)
     {
         $this->username = $username;
         $this->password = $password;
@@ -42,8 +41,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         $this->getTokenUrl = $getTokenUrl;
         $this->getDataSourcesByIntegrationUrl = $getDataSourcesByIntegrationUrl;
         $this->getDataSourcesByEmailUrl = $getDataSourcesByEmailUrl;
-        $this->urReceiveFileViaEmailWebHookUrl = $urReceiveFileViaEmailWebHookUrl;
-        $this->urReceiveFileViaFetcherUrl = $urReceiveFileViaFetcherUrl;
+        $this->urReceiveFileUrl = $urReceiveFileUrl;
     }
 
     /**
@@ -163,13 +161,14 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         $header = array('Authorization: Bearer ' . $this->getToken());
 
         /* post file to data sources */
-        $url = $viaModule === self::VIA_MODULE_FETCHER ? $this->urReceiveFileViaFetcherUrl : $this->urReceiveFileViaEmailWebHookUrl;
+        $url = $this->urReceiveFileUrl;
         //$url = $url . '?' . http_build_query(['XDEBUG_SESSION_START' => 1]); // for debug with ur api
 
         $ch = curl_init();
         $header[] = 'Content-Type:multipart/form-data';
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, array(
+            'source' => $viaModule === self::VIA_MODULE_EMAIL_WEB_HOOK ? 'email' : 'integration',
             'ids' => json_encode($dataSourceIds),
             'metadata' => json_encode($metadata),
             'file_content' => curl_file_create($file)

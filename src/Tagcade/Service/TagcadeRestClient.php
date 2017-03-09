@@ -61,6 +61,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new \Exception('json decoding for token error');
         }
+
         if (!array_key_exists('token', $token)) {
             throw new \Exception(sprintf('Could not authenticate user %s', $this->username));
         }
@@ -75,6 +76,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
      */
     public function getListDataSourcesByEmail($publisherId, $email)
     {
+        /* important: not try-catch here, we need let getToken() throw exception when authentication failed */
         $header = array('Authorization: Bearer ' . $this->getToken());
 
         $data = [
@@ -108,6 +110,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
      */
     public function getListDataSourcesByIntegration($publisherId, $demandPartnerCName)
     {
+        /* important: not try-catch here, we need let getToken() throw exception when authentication failed */
         $header = array('Authorization: Bearer ' . $this->getToken());
 
         $data = [
@@ -157,7 +160,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
      */
     public function postFileToURApiForMultipleDataSources($file, array $metadata, $dataSourceIds, $viaModule = self::VIA_MODULE_EMAIL_WEB_HOOK)
     {
-        /* get token */
+        /* get token, important: not try-catch here, we need let getToken() throw exception when authentication failed */
         $header = array('Authorization: Bearer ' . $this->getToken());
 
         /* post file to data sources */

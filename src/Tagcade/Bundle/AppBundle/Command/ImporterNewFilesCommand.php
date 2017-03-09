@@ -15,12 +15,12 @@ use ZipArchive;
 class ImporterNewFilesCommand extends ContainerAwareCommand
 {
     const DIR_MIN_DEPTH_LEVELS = 2;
-    const DIR_VIA_MODULE_EMAIL_WEB_HOOK = 'email';
-    const DIR_VIA_MODULE_FETCHER = 'fetcher';
+    const DIR_SOURCE_MODULE_EMAIL_WEB_HOOK = 'email';
+    const DIR_SOURCE_MODULE_FETCHER = 'fetcher';
 
-    public static $SUPPORTED_DIR_VIA_MODULE_MAP = [
-        self::DIR_VIA_MODULE_EMAIL_WEB_HOOK,
-        self::DIR_VIA_MODULE_FETCHER
+    public static $SUPPORTED_DIR_SOURCE_MODULE_MAP = [
+        self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK,
+        self::DIR_SOURCE_MODULE_FETCHER
     ];
 
     /** @var LoggerInterface */
@@ -123,7 +123,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         );
 
         /**
-         * @var array $fileList, format as:
+         * @var array $fileList , format as:
          * [
          *     <md5> => [
          *         "filePath" => <file path>,
@@ -158,7 +158,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
         // organize all files into pair file-metadataFile
         /**
-         * @var array $organizedFileList, format as:
+         * @var array $organizedFileList , format as:
          * [
          *     <file name> => [
          *         "file" => <file path>,
@@ -288,14 +288,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $dirViaModule = array_pop($dirs);
-            if (empty($dirViaModule)) {
-                $this->logger->error(sprintf('Can not extract viaModule from file path %s!!!', $filePath));
+            $dirSourceModule = array_pop($dirs); // dirSourceModule: fetcher or email
+            if (empty($dirSourceModule)) {
+                $this->logger->error(sprintf('Can not extract source module from file path %s!!!', $filePath));
                 continue;
             }
 
-            if (!in_array($dirViaModule, self::$SUPPORTED_DIR_VIA_MODULE_MAP)) {
-                $this->logger->error(sprintf('Not support for outside of viaModule %s!!!', implode(' and ', self::$SUPPORTED_DIR_VIA_MODULE_MAP)));
+            if (!in_array($dirSourceModule, self::$SUPPORTED_DIR_SOURCE_MODULE_MAP)) {
+                $this->logger->error(sprintf('Not support for outside of source module %s!!!', implode(' and ', self::$SUPPORTED_DIR_SOURCE_MODULE_MAP)));
                 continue;
             }
 
@@ -323,7 +323,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             }
 
             /* post file to ur api for data sources */
-            if ($dirViaModule == self::DIR_VIA_MODULE_EMAIL_WEB_HOOK) {
+            if ($dirSourceModule == self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK) {
                 /* create email */
                 $emailToken = $partnerCNameOrToken;
                 $email = str_replace('$PUBLISHER_ID$', $publisherId, $this->emailTemplate);
@@ -339,7 +339,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
 
                 $this->logger->info(sprintf('email %s: %s', $email, $postResult));
-            } else if ($dirViaModule == self::DIR_VIA_MODULE_FETCHER) {
+            } else if ($dirSourceModule == self::DIR_SOURCE_MODULE_FETCHER) {
                 /* get list data sources */
                 $dataSourceIds = $this->getDataSourceIdsByIntegration($publisherId, $partnerCNameOrToken);
                 if (!is_array($dataSourceIds)) {
@@ -372,7 +372,12 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     private function getDataSourceIdsByEmail($publisherId, $email)
     {
         /* get list data sources */
-        $dataSources = $this->restClient->getListDataSourcesByEmail($publisherId, $email);
+        try {
+            $dataSources = $this->restClient->getListDataSourcesByEmail($publisherId, $email);
+        } catch (\Exception $e) {
+            $this->logger->error($e->getMessage());
+            return false;
+        }
 
         if (!is_array($dataSources)) {
             return false;
@@ -401,7 +406,12 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     private function getDataSourceIdsByIntegration($publisherId, $partnerCName)
     {
         /* get list data sources */
-        $dataSources = $this->restClient->getListDataSourcesByIntegration($publisherId, $partnerCName);
+        try {
+            $dataSources = $this->restClient->getListDataSourcesByIntegration($publisherId, $partnerCName);
+        } catch (\Exception $e) {
+            $this->logger->error($e->getMessage());
+            return false;
+        }
 
         if (!is_array($dataSources)) {
             return false;

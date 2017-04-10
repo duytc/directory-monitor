@@ -277,6 +277,10 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     private function postFilesToUnifiedReportApi(array $fileList)
     {
         foreach ($fileList as $fileName => $value) {
+            if (!isset($value['file'])) {
+                continue;
+            }
+
             $filePath = $value['file'];
             $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
 

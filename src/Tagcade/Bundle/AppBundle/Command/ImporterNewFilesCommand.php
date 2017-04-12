@@ -18,6 +18,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     const DIR_SOURCE_MODULE_EMAIL_WEB_HOOK = 'email';
     const DIR_SOURCE_MODULE_FETCHER = 'fetcher';
 
+    const DEFAULT_SUPPORTED_EXTENSIONS = ['csv', 'xls', 'xlsx', 'meta'];
+
     public static $SUPPORTED_DIR_SOURCE_MODULE_MAP = [
         self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK,
         self::DIR_SOURCE_MODULE_FETCHER
@@ -33,6 +35,9 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     /** @var TagcadeRestClientInterface */
     protected $restClient;
 
+    /**
+     * @inheritdoc
+     */
     protected function configure()
     {
         $this
@@ -40,6 +45,9 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             ->setDescription('Scan for relevant files in pre-configured directory and post files to unified report api system');
     }
 
+    /**
+     * @inheritdoc
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $container = $this->getContainer();
@@ -104,6 +112,10 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         $this->logger->info('Complete directory process');
     }
 
+    /**
+     * @param string $filePath
+     * @return string
+     */
     protected function getFileFullPath($filePath)
     {
         $symfonyAppDir = $this->getContainer()->getParameter('kernel.root_dir');
@@ -113,7 +125,23 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         return $dataPath;
     }
 
-    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = ['csv', 'xls', 'xlsx', 'meta'])
+    /**
+     * get new files from watch directory
+     *
+     * @param int $duplicateFileCount
+     * @param array $supportedExtensions
+     * @return array format as:
+     *
+     * [
+     *     <file name> => [
+     *         "file" => <file path>,
+     *         "metadata" => <metadata file path>
+     *     ],
+     *     ...
+     * ]
+     *
+     */
+    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
         // process zip files
         $this->extractZipFilesIfAny();
@@ -163,7 +191,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
          *     <file name> => [
          *         "file" => <file path>,
          *         "metadata" => <metadata file path>
-         *     ]
+         *     ],
+         *     ...
          * ]
          */
         $organizedFileList = [];
@@ -189,28 +218,56 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         return $organizedFileList;
     }
 
-    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv', 'xls', 'xlsx', 'meta'])
+    /**
+     * check if file (with full path) is supported
+     *
+     * @param string $fileFullPath
+     * @param array $supportedExtensions
+     * @return bool
+     */
+    protected function supportFile($fileFullPath, array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
         if (empty($fileFullPath)) {
             return false;
         }
 
-        foreach ($supportedExtensions as $ext) {
-            $expectPositionOfExt = strlen($fileFullPath) - strlen($ext);
-            $foundPositionOfExt = strrpos($fileFullPath, $ext);
-            if ($foundPositionOfExt !== false && $expectPositionOfExt === $foundPositionOfExt) {
-                return true;
+        $ext = pathinfo($fileFullPath, PATHINFO_EXTENSION);
+
+        if (!in_array($ext, $supportedExtensions)) {
+            return false;
+        }
+
+        // special case: files may come from email-webhook that created metadata files for unsupported files
+        // e.g: file=abc.jpg and metadata-file=abc.jpg.meta
+        // so that we need know these metadata files and allow remove them
+        if ($ext === 'meta') {
+            $filenameWithoutExtension = pathinfo($fileFullPath, PATHINFO_FILENAME);
+
+            // remove .meta from supported extension
+            $supportedExtensionsWithoutMetaExtension = array_filter($supportedExtensions, function ($value) {
+                return $value !== 'meta';
+            });
+
+            // try to get extension (fake) from filename
+            // if filePath=abc.jpg.meta => filenameWithoutExtension=abc.jpg => fakeExt=jpg
+            $fakeExt = pathinfo($filenameWithoutExtension, PATHINFO_EXTENSION);
+            if (!empty($fakeExt) && !in_array($fakeExt, $supportedExtensionsWithoutMetaExtension)) {
+                return false;
             }
         }
 
-        return false;
+        return true;
     }
 
+    /**
+     * extract zip files to current their places
+     */
     protected function extractZipFilesIfAny()
     {
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
+
         /** @var \SplFileInfo $file */
         foreach ($files as $file) {
             $fileFullPath = $file->getRealPath();
@@ -249,6 +306,10 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         }
     }
 
+    /**
+     * @param string $zipFile
+     * @return string
+     */
     protected function getFolderToExtractFile($zipFile)
     {
         $targetFile = rtrim($zipFile, '.zip');
@@ -277,6 +338,10 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     private function postFilesToUnifiedReportApi(array $fileList)
     {
         foreach ($fileList as $fileName => $value) {
+            if (!array_key_exists('file', $value) || empty($value['file'])) {
+                continue;
+            }
+
             $filePath = $value['file'];
             $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
 
@@ -311,7 +376,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $metadataFilePath = $value['metadata'];
+            $metadataFilePath = array_key_exists('metadata', $value) ? $value['metadata'] : null;
             $metadata = [];
             if (is_string($metadataFilePath) && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
                 $metadata = file_get_contents($metadataFilePath);

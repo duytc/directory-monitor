@@ -10,29 +10,40 @@ use Symfony\Component\Console\Question\ConfirmationQuestion;
 
 class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
 {
-    protected $archivedFiles;
+    const COMMAND_OPTION_DELETE = 'delete';
+    const COMMAND_OPTION_DELETE_SHORTCUT = 'd';
 
     const QUESTION_CONFIRM_DELETE = 'Are you sure to delete %d incompatible files? (y/n)';
-    const OPTION_DELETE = 'delete';
 
+    const DEFAULT_SUPPORTED_EXTENSIONS = ImporterNewFilesCommand::DEFAULT_SUPPORTED_EXTENSIONS;
+
+    protected $archivedFiles;
+
+    /**
+     * @inheritdoc
+     */
     protected function configure()
     {
         $this
             ->setName('tc:ur:remove-incompatible-files')
             ->setDescription('Scan for incompatible files in pre-configured directory')
             ->addOption(
-                self::OPTION_DELETE,
-                null,
+                self::COMMAND_OPTION_DELETE,
+                self::COMMAND_OPTION_DELETE_SHORTCUT,
                 InputOption::VALUE_NONE,
                 'If set, the task will remove incompatibility files immediately'
             );
     }
 
+    /**
+     * @inheritdoc
+     */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $container = $this->getContainer();
 
-        $this->archivedFiles = $this->getFileFullPath($container->getParameter('processed_archived_files'));
+        /* check if has config processed_archived_files and create directory if not existed */
+        $this->archivedFiles = $this->getFileFullPath($container->getParameter('watch_root'));
 
         if (!is_dir($this->archivedFiles)) {
             if (!mkdir($this->archivedFiles)) {
@@ -44,46 +55,29 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->archivedFiles));
         }
 
+        /* check if has config supported_extensions */
         $supportedExtensions = $container->getParameter('supported_extensions');
         if (!is_array($supportedExtensions)) {
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
 
-        $this->deleteEmptyFolders($this->archivedFiles);
-        
-        $incompatibleFiles = $this->getIncompatibleFiles($supportedExtensions);
-        if (count($incompatibleFiles) == 0){
-            $output->writeln('None incompatible file found. Complete directory process');
-            return;
-        }
+        /* remove empty folders */
+        $emptyFoldersCount = 0;
+        //$this->deleteEmptyFolders($this->archivedFiles, $emptyFoldersCount);
 
-        $listFile = '';
-        $number = 1;
-        foreach ($incompatibleFiles as $incompatibleFile){
-            $listFile = $listFile.$number.'  '.$incompatibleFile.PHP_EOL;
-            $number++;
-        }
-        $output->writeln('List incompatible files:');
-        $output->writeln($listFile);
+        /* remove incompatible files */
+        $incompatibleFilesCount = $this->deleteIncompatibleFiles($input, $output, $supportedExtensions);
 
-        $forceDelete = $input->getOption(self::OPTION_DELETE);
-        if (!$forceDelete) {
-            $question = new ConfirmationQuestion(
-                sprintf(
-                    '<question>'.self::QUESTION_CONFIRM_DELETE.'</question>',
-                    count($incompatibleFiles)
-                ),
-                false
-            );
-            if (!$this->getHelper('question')->ask($input, $output, $question)) {
-                return;
-            }
-        }
-        $this->deleteIncompatibleFiles($incompatibleFiles);
-        $this->deleteEmptyFolders($this->archivedFiles);
-        $output->writeln(sprintf("Delete %d files", count($incompatibleFiles)));
+        /* do removing empty folders again */
+        //$emptyFoldersCount += $this->deleteEmptyFolders($this->archivedFiles, $emptyFoldersCount);
+
+        $output->writeln(sprintf('Delete %d files, %d empty folders', $incompatibleFilesCount, $emptyFoldersCount));
     }
 
+    /**
+     * @param string $filePath
+     * @return string
+     */
     protected function getFileFullPath($filePath)
     {
         $symfonyAppDir = $this->getContainer()->getParameter('kernel.root_dir');
@@ -93,7 +87,82 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         return $dataPath;
     }
 
-    protected function getIncompatibleFiles($supportedExtensions = ['csv', 'xls', 'xlsx', 'json'])
+    /**
+     * delete empty folders
+     *
+     * @param string $path
+     * @param int $emptyFoldersCount
+     * @return bool
+     */
+    private function deleteEmptyFolders($path, &$emptyFoldersCount = 0)
+    {
+        $empty = true;
+        foreach (glob($path . DIRECTORY_SEPARATOR . "*") as $file) {
+            $empty &= is_dir($file) && $this->deleteEmptyFolders($file, $emptyFoldersCount);
+        }
+
+        $emptyFoldersCount += ($empty ? 1 : 0);
+
+        return $empty && rmdir($path);
+    }
+
+    /**
+     * delete incompatible files
+     *
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @param array $supportedExtensions
+     * @return int
+     */
+    private function deleteIncompatibleFiles(InputInterface $input, OutputInterface $output, array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    {
+        $incompatibleFiles = $this->getIncompatibleFiles($supportedExtensions);
+        if (count($incompatibleFiles) == 0) {
+            $output->writeln('None incompatible file found. Complete directory process');
+            return 0;
+        }
+
+        $listFile = '';
+        $number = 1;
+        foreach ($incompatibleFiles as $incompatibleFile) {
+            $listFile = $listFile . $number . '  ' . $incompatibleFile . PHP_EOL;
+            $number++;
+        }
+
+        $output->writeln('List incompatible files:');
+        $output->writeln($listFile);
+
+        // confirm before removing incompatible files
+        $forceDelete = $input->getOption(self::COMMAND_OPTION_DELETE);
+        if (!$forceDelete) {
+            $question = new ConfirmationQuestion(
+                sprintf(
+                    '<question>' . self::QUESTION_CONFIRM_DELETE . '</question>',
+                    count($incompatibleFiles)
+                ),
+                false
+            );
+
+            if (!$this->getHelper('question')->ask($input, $output, $question)) {
+                return 0;
+            }
+        }
+
+        // do removing incompatible files
+        foreach ($incompatibleFiles as $filePath) {
+            if (is_file($filePath)) {
+                unlink($filePath);
+            }
+        }
+
+        return count($incompatibleFiles);
+    }
+
+    /**
+     * @param array $supportedExtensions
+     * @return array
+     */
+    protected function getIncompatibleFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
@@ -108,7 +177,11 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             }
 
             if (!$this->supportFile($fileFullPath, $supportedExtensions)) {
-                $fileList[] = $fileFullPath;
+                if (!empty($fileFullPath)) {
+                    // make sure fileFullPath is not empty
+                    $fileList[] = $fileFullPath;
+                }
+
                 continue;
             }
         }
@@ -116,49 +189,42 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         return $fileList;
     }
 
-    protected function supportFile($fileFullPath, array $supportedExtensions = ['csv', 'xls', 'xlsx', 'json'])
+    /**
+     * @param string $fileFullPath
+     * @param array $supportedExtensions
+     * @return bool
+     */
+    protected function supportFile($fileFullPath, array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
         if (empty($fileFullPath)) {
             return false;
         }
 
-        foreach ($supportedExtensions as $ext) {
-            if ($ext == pathinfo($fileFullPath, PATHINFO_EXTENSION)) {
-                return true;
+        $ext = pathinfo($fileFullPath, PATHINFO_EXTENSION);
+
+        if (!in_array($ext, $supportedExtensions)) {
+            return false;
+        }
+
+        // special case: files may come from email-webhook that created metadata files for unsupported files
+        // e.g: file=abc.jpg and metadata-file=abc.jpg.meta
+        // so that we need know these metadata files and allow remove them
+        if ($ext === 'meta') {
+            $filenameWithoutExtension = pathinfo($fileFullPath, PATHINFO_FILENAME);
+
+            // remove .meta from supported extension
+            $supportedExtensionsWithoutMetaExtension = array_filter($supportedExtensions, function ($value) {
+                return $value !== 'meta';
+            });
+
+            // try to get extension (fake) from filename
+            // if filePath=abc.jpg.meta => filenameWithoutExtension=abc.jpg => fakeExt=jpg
+            $fakeExt = pathinfo($filenameWithoutExtension, PATHINFO_EXTENSION);
+            if (!empty($fakeExt) && !in_array($fakeExt, $supportedExtensionsWithoutMetaExtension)) {
+                return false;
             }
         }
 
-        return false;
-    }
-
-    /**
-     * delete incompatible files
-     *
-     * @param array $fileList
-     */
-    private function deleteIncompatibleFiles(array $fileList)
-    {
-        foreach ($fileList as $filePath) {
-            if (is_file($filePath))
-            {
-                unlink($filePath);
-            }
-        }
-    }
-
-    /**
-     * delete empty folders
-     *
-     * @param $path
-     * @return bool
-     */
-    private function deleteEmptyFolders($path)
-    {
-        $empty=true;
-        foreach (glob($path.DIRECTORY_SEPARATOR."*") as $file)
-        {
-            $empty &= is_dir($file) && $this->deleteEmptyFolders($file);
-        }
-        return $empty && rmdir($path);
+        return true;
     }
 }

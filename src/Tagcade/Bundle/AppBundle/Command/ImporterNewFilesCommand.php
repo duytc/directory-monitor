@@ -61,6 +61,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             $this->logger->info(sprintf('%s: The command is already running in another process.', $this->getName()));
             return;
         }
+
         $this->emailTemplate = $container->getParameter('ur_email_template');
         if (strpos($this->emailTemplate, '$PUBLISHER_ID$') < 0 || strpos($this->emailTemplate, '$TOKEN$') < 0) {
             throw new \Exception(sprintf('ur_email_template %s is invalid config: missing $PUBLISHER_ID$ or $TOKEN$ macro', $this->emailTemplate));
@@ -113,6 +114,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     }
 
     /**
+     * get File Full Path
+     * 
      * @param string $filePath
      * @return string
      */
@@ -155,6 +158,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
          * [
          *     <md5> => [
          *         "filePath" => <file path>,
+         *         "directoryHash" => <hash of file directory>,
          *         "fileName" => <file name>
          *     ]
          * ]
@@ -163,20 +167,22 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         $duplicateFileCount = 0;
         foreach ($files as $file) {
             /** @var \SplFileInfo $file */
-            $fileFullPath = $file->getRealPath();
-            if (!is_file($fileFullPath)) {
+            $fullFilePath = $file->getRealPath();
+            if (!is_file($fullFilePath)) {
                 continue;
             }
 
-            if (!$this->supportFile($fileFullPath, $supportedExtensions)) {
+            if (!$this->supportFile($fullFilePath, $supportedExtensions)) {
                 continue;
             }
 
             $fileName = $file->getFilename();
-            $md5 = hash_file('md5', $fileFullPath);
+            $directory = $file->getPath();
+            $md5 = hash_file('md5', $fullFilePath);
             if (!array_key_exists($md5, $fileList)) {
                 $fileList[$md5] = [
-                    'filePath' => $fileFullPath,
+                    'filePath' => $fullFilePath,
+                    'directoryHash' => hash('md5', $directory),
                     'fileName' => $fileName
                 ];
             } else {
@@ -188,7 +194,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         /**
          * @var array $organizedFileList , format as:
          * [
-         *     <file name> => [
+         *     <directoryHash> => [
          *         "file" => <file path>,
          *         "metadata" => <metadata file path>
          *     ],
@@ -198,19 +204,18 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         $organizedFileList = [];
         foreach ($fileList as $md5 => $fileInfo) {
             $filePath = $fileInfo['filePath'];
+            $directoryHash = $fileInfo['directoryHash'];
             $fileName = $fileInfo['fileName'];
 
             // check if end with .meta, so that is metadata file
             if (strpos($fileName, '.meta') == (strlen($fileName) - 5)) { // 5 is length of '.meta'
-                $fileName = str_replace('.meta', '', $fileName);
-
-                $organizedFileList[$fileName]['metadata'] = $filePath;
+                $organizedFileList[$directoryHash]['metadata'] = $filePath;
             } else {
-                $organizedFileList[$fileName]['file'] = $filePath;
+                $organizedFileList[$directoryHash]['file'] = $filePath;
 
                 // set default metadata value to `false` when not yet existed
-                if (!array_key_exists('metadata', $organizedFileList[$fileName])) {
-                    $organizedFileList[$fileName]['metadata'] = false;
+                if (!array_key_exists('metadata', $organizedFileList[$directoryHash])) {
+                    $organizedFileList[$directoryHash]['metadata'] = false;
                 }
             }
         }
@@ -260,7 +265,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     }
 
     /**
-     * extract zip files to current their places
+     * extract zip files if existed to current their places
      */
     protected function extractZipFilesIfAny()
     {
@@ -307,6 +312,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     }
 
     /**
+     * get folder to extract file
+     * 
      * @param string $zipFile
      * @return string
      */
@@ -337,7 +344,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      */
     private function postFilesToUnifiedReportApi(array $fileList)
     {
-        foreach ($fileList as $fileName => $value) {
+        foreach ($fileList as $directoryHash => $value) {
             if (!array_key_exists('file', $value) || empty($value['file'])) {
                 continue;
             }

@@ -18,7 +18,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     const DIR_SOURCE_MODULE_EMAIL_WEB_HOOK = 'email';
     const DIR_SOURCE_MODULE_FETCHER = 'fetcher';
 
-    const DEFAULT_SUPPORTED_EXTENSIONS = ['csv', 'xls', 'xlsx', 'meta'];
+    const DEFAULT_SUPPORTED_EXTENSIONS = ['csv', 'xls', 'xlsx', 'meta', 'zip'];
 
     public static $SUPPORTED_DIR_SOURCE_MODULE_MAP = [
         self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK,
@@ -115,7 +115,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
     /**
      * get File Full Path
-     * 
+     *
      * @param string $filePath
      * @return string
      */
@@ -292,10 +292,10 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             $lastSlashPosition = strrpos($fileFullPath, '/');
 
-            $targetFile = $this->getFolderToExtractFile($fileFullPath);
-            $this->logger->info(sprintf('Extracting file %s to %s', $fileFullPath, $targetFile));
+            $extractedFolder = $this->getFolderToExtractFile($fileFullPath);
+            $this->logger->info(sprintf('Extracting file %s to %s', $fileFullPath, $extractedFolder));
 
-            $res = $zip->extractTo($targetFile);
+            $res = $zip->extractTo($extractedFolder);
             if ($res === FALSE) {
                 $this->logger->error(sprintf('Failed to unzip the file %s', $fileFullPath));
             }
@@ -308,19 +308,41 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             $fileName = substr($fileFullPath, $lastSlashPosition + 1);
             $archived = sprintf('%s/%s', $this->archivedFiles, $fileName);
             rename($fileFullPath, $archived);
+
+            // move metadata file to extracted folder if has
+            $currentFolder = pathinfo($fileFullPath, PATHINFO_DIRNAME);
+            $filesInCurrentDir = scandir($currentFolder);
+            if (!is_array($filesInCurrentDir)) {
+                continue;
+            }
+
+            foreach ($filesInCurrentDir as $fileInCurrentDir) {
+                if (is_dir($fileInCurrentDir)) {
+                    continue;
+                }
+
+                $ext = pathinfo($fileInCurrentDir, PATHINFO_EXTENSION);
+                if ($ext !== 'meta') {
+                    continue;
+                }
+
+                $fileInCurrentDirFullPath = sprintf('%s/%s', $currentFolder, $fileInCurrentDir);
+                $metadataFileNewPath = sprintf('%s/%s', $extractedFolder, $fileInCurrentDir);
+                rename($fileInCurrentDirFullPath, $metadataFileNewPath);
+            }
         }
     }
 
     /**
      * get folder to extract file
-     * 
+     *
      * @param string $zipFile
-     * @return string
+     * @return string $zipFile_without_.zip-timestamp
      */
     protected function getFolderToExtractFile($zipFile)
     {
         $targetFile = rtrim($zipFile, '.zip');
-        $newTargetFile = $targetFile;
+        $newTargetFile = sprintf('%s-%s', $targetFile, (new \DateTime())->getTimestamp());
 
         if (!is_dir($targetFile)) {
             if (file_exists($newTargetFile)) {

@@ -539,7 +539,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     {
         $newFileToStore = $this->getProcessedFilePath($filePath, $publisherId, $partnerCNameOrToken, $this->archivedFiles);
         $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
-
         rename($filePath, $newFileToStore);
     }
 

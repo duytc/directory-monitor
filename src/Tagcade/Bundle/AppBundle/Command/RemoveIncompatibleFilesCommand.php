@@ -1,23 +1,18 @@
 <?php
-
 namespace Tagcade\Bundle\AppBundle\Command;
 
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Question\ConfirmationQuestion;
 
 class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
 {
-    const COMMAND_OPTION_DELETE = 'delete';
-    const COMMAND_OPTION_DELETE_SHORTCUT = 'd';
-
-    const QUESTION_CONFIRM_DELETE = 'Are you sure to delete %d incompatible files? (y/n)';
 
     const DEFAULT_SUPPORTED_EXTENSIONS = ImporterNewFilesCommand::DEFAULT_SUPPORTED_EXTENSIONS;
-
     protected $archivedFiles;
+    /** @var LoggerInterface */
+    protected $logger;
 
     /**
      * @inheritdoc
@@ -26,13 +21,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
     {
         $this
             ->setName('tc:ur:remove-incompatible-files')
-            ->setDescription('Scan for incompatible files in pre-configured directory')
-            ->addOption(
-                self::COMMAND_OPTION_DELETE,
-                self::COMMAND_OPTION_DELETE_SHORTCUT,
-                InputOption::VALUE_NONE,
-                'If set, the task will remove incompatibility files immediately'
-            );
+            ->setDescription('Scan for incompatible files in pre-configured directory');
     }
 
     /**
@@ -41,37 +30,31 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $container = $this->getContainer();
-
+        $this->logger = $container->get('logger');
         /* check if has config processed_archived_files and create directory if not existed */
         $this->archivedFiles = $this->getFileFullPath($container->getParameter('watch_root'));
-
         if (!is_dir($this->archivedFiles)) {
             if (!mkdir($this->archivedFiles)) {
                 throw new \Exception(sprintf('Can not create archivedFiles directory %s', $this->archivedFiles));
             }
         }
-
         if (!is_writable($this->archivedFiles)) {
             throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->archivedFiles));
         }
-
         /* check if has config supported_extensions */
         $supportedExtensions = $container->getParameter('supported_extensions');
         if (!is_array($supportedExtensions)) {
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
-
         /* remove empty folders */
-        $emptyFoldersCount = 0;
+        //$emptyFoldersCount = 0;
         //$this->deleteEmptyFolders($this->archivedFiles, $emptyFoldersCount);
-
         /* remove incompatible files */
-        $incompatibleFilesCount = $this->deleteIncompatibleFiles($input, $output, $supportedExtensions);
-
+        $incompatibleFilesCount = $this->deleteIncompatibleFiles($supportedExtensions);
         /* do removing empty folders again */
         //$emptyFoldersCount += $this->deleteEmptyFolders($this->archivedFiles, $emptyFoldersCount);
-
-        $output->writeln(sprintf('Delete %d files, %d empty folders', $incompatibleFilesCount, $emptyFoldersCount));
+        //$this->logger->info(sprintf('Delete %d files, %d empty folders', $incompatibleFilesCount, $emptyFoldersCount));
+        $this->logger->info(sprintf('Delete %d incompatible files', $incompatibleFilesCount));
     }
 
     /**
@@ -83,7 +66,6 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         $symfonyAppDir = $this->getContainer()->getParameter('kernel.root_dir');
         $isRelativeToProjectRootDir = (strpos($filePath, './') === 0 || strpos($filePath, '/') !== 0);
         $dataPath = $isRelativeToProjectRootDir ? sprintf('%s/%s', rtrim($symfonyAppDir, '/app'), ltrim($filePath, './')) : $filePath;
-
         return $dataPath;
     }
 
@@ -100,61 +82,36 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         foreach (glob($path . DIRECTORY_SEPARATOR . "*") as $file) {
             $empty &= is_dir($file) && $this->deleteEmptyFolders($file, $emptyFoldersCount);
         }
-
         $emptyFoldersCount += ($empty ? 1 : 0);
-
         return $empty && rmdir($path);
     }
 
     /**
      * delete incompatible files
      *
-     * @param InputInterface $input
-     * @param OutputInterface $output
      * @param array $supportedExtensions
      * @return int
      */
-    private function deleteIncompatibleFiles(InputInterface $input, OutputInterface $output, array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    private function deleteIncompatibleFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
         $incompatibleFiles = $this->getIncompatibleFiles($supportedExtensions);
         if (count($incompatibleFiles) == 0) {
-            $output->writeln('None incompatible file found. Complete directory process');
+            $this->logger->info(sprintf('None incompatible file found. Complete directory process'));
             return 0;
         }
-
         $listFile = '';
         $number = 1;
         foreach ($incompatibleFiles as $incompatibleFile) {
             $listFile = $listFile . $number . '  ' . $incompatibleFile . PHP_EOL;
             $number++;
         }
-
-        $output->writeln('List incompatible files:');
-        $output->writeln($listFile);
-
-        // confirm before removing incompatible files
-        $forceDelete = $input->getOption(self::COMMAND_OPTION_DELETE);
-        if (!$forceDelete) {
-            $question = new ConfirmationQuestion(
-                sprintf(
-                    '<question>' . self::QUESTION_CONFIRM_DELETE . '</question>',
-                    count($incompatibleFiles)
-                ),
-                false
-            );
-
-            if (!$this->getHelper('question')->ask($input, $output, $question)) {
-                return 0;
-            }
-        }
-
+        $this->logger->info(sprintf('List incompatible files: %s', $listFile));
         // do removing incompatible files
         foreach ($incompatibleFiles as $filePath) {
             if (is_file($filePath)) {
                 unlink($filePath);
             }
         }
-
         return count($incompatibleFiles);
     }
 
@@ -167,7 +124,6 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
-
         $fileList = [];
         foreach ($files as $file) {
             /** @var \SplFileInfo $file */
@@ -175,17 +131,14 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             if (!is_file($fileFullPath)) {
                 continue;
             }
-
             if (!$this->supportFile($fileFullPath, $supportedExtensions)) {
                 if (!empty($fileFullPath)) {
                     // make sure fileFullPath is not empty
                     $fileList[] = $fileFullPath;
                 }
-
                 continue;
             }
         }
-
         return $fileList;
     }
 
@@ -199,24 +152,19 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         if (empty($fileFullPath)) {
             return false;
         }
-
         $ext = pathinfo($fileFullPath, PATHINFO_EXTENSION);
-
         if (!in_array($ext, $supportedExtensions)) {
             return false;
         }
-
         // special case: files may come from email-webhook that created metadata files for unsupported files
         // e.g: file=abc.jpg and metadata-file=abc.jpg.meta
         // so that we need know these metadata files and allow remove them
         if ($ext === 'meta') {
             $filenameWithoutExtension = pathinfo($fileFullPath, PATHINFO_FILENAME);
-
             // remove .meta from supported extension
             $supportedExtensionsWithoutMetaExtension = array_filter($supportedExtensions, function ($value) {
                 return $value !== 'meta';
             });
-
             // try to get extension (fake) from filename
             // if filePath=abc.jpg.meta => filenameWithoutExtension=abc.jpg => fakeExt=jpg
             $fakeExt = pathinfo($filenameWithoutExtension, PATHINFO_EXTENSION);
@@ -224,7 +172,6 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
                 return false;
             }
         }
-
         return true;
     }
 }

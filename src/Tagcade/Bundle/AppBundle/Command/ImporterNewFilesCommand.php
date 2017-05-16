@@ -178,7 +178,23 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             $fileName = $file->getFilename();
             $directory = $file->getPath();
+
+            // append dataSourceId to avoid duplicate file in same dataSource
+            $metadata = $this->getMetaDataFromFolder($directory);
+
+            $dataSourceId = 0;
+            if (array_key_exists('dataSourceId', $metadata)) {
+                $dataSourceId = $metadata['dataSourceId'];
+            }
+
+            $date = 0;
+            if (array_key_exists('date', $metadata)) {
+                $date = $metadata['date'];
+            }
+
             $md5 = hash_file('md5', $fullFilePath);
+            $md5 = $dataSourceId . '_' . $date . '_' . $md5;
+
             if (!array_key_exists($md5, $fileList)) {
                 $fileList[$md5] = [
                     'filePath' => $fullFilePath,
@@ -434,8 +450,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
                 $this->logger->info(sprintf('email %s: %s', $email, $postResult));
             } else if ($dirSourceModule == self::DIR_SOURCE_MODULE_FETCHER) {
-                /* get list data sources */
-                $dataSourceIds = $this->getDataSourceIdsByIntegration($publisherId, $partnerCNameOrToken, $metadata);
+                // use metadata to filter data source
+                $dataSourceIds = $this->getDataSourcesFromMetaData($metadata);
+
+                if (!is_array($dataSourceIds) || count($dataSourceIds) < 1) {
+                    unlink($filePath);
+                    continue;
+                }
+
                 if (!is_array($dataSourceIds)) {
                     $this->logger->warning(sprintf('No data sources found for this publisher %d and partner cname %s', $publisherId, $partnerCNameOrToken));
                     continue;
@@ -495,10 +517,9 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      *
      * @param int $publisherId
      * @param string $partnerCName
-     * @param array $metadata
      * @return array|bool false if no data source found
      */
-    private function getDataSourceIdsByIntegration($publisherId, $partnerCName, array $metadata)
+    private function getDataSourceIdsByIntegration($publisherId, $partnerCName)
     {
         /* get list data sources */
         try {
@@ -511,9 +532,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         if (!is_array($dataSources)) {
             return false;
         }
-
-        // use metadata to filter data source
-        $dataSources = $this->filterByMetadata($dataSources, $metadata);
 
         /* convert to data source ids */
         $dataSourceIds = [];
@@ -570,39 +588,48 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     }
 
     /**
-     * filter DataSources By Metadata
-     *
-     * @param array $dataSources
-     * @param array $metadata { publisherId, dataSourceId, ... }
-     * @return array
+     * @param array $metaData
+     * @return array|bool false if no data source found
      */
-    private function filterByMetadata(array $dataSources, array $metadata)
+    private function getDataSourcesFromMetaData(array $metaData)
     {
-        return array_filter($dataSources, function ($dataSource) use ($metadata) {
-            if (!is_array($dataSource)) {
-                return true;
-            }
+        if (array_key_exists('dataSourceId', $metaData)) {
+            return [$metaData['dataSourceId']];
+        }
 
-            // filter by publisherId
-            $isValidPublisherId = true;
-            if (array_key_exists('publisherId', $metadata)) {
-                $isValidPublisherId = (
-                    array_key_exists('publisher', $dataSource)
-                    && array_key_exists('id', $dataSource['publisher'])
-                    && $metadata['publisherId'] == $dataSource['publisher']['id']
-                );
-            }
+        return false;
+    }
 
-            $isValidDataSourceId = true;
-            // filter by dataSourceId
-            if (array_key_exists('dataSourceId', $metadata)) {
-                $isValidDataSourceId = (
-                    array_key_exists('id', $dataSource)
-                    && $metadata['dataSourceId'] == $dataSource['id']
-                );
-            }
+    /**
+     * @param $folder
+     * @return mixed
+     */
+    private function getMetaDataFromFolder($folder)
+    {
+        $subFiles = scandir($folder);
 
-            return $isValidPublisherId && $isValidDataSourceId;
+        $subFiles = array_map(function ($subFile) use ($folder) {
+            return $folder . '/' . $subFile;
+        }, $subFiles);
+
+        $subFiles = array_filter($subFiles, function ($file) {
+            return is_file($file);
         });
+
+        foreach ($subFiles as $subFile) {
+            $subFile = new \SplFileInfo($subFile);
+            if ($subFile->getExtension() == 'meta') {
+                $metadataFilePath = $subFile->getRealPath();
+                $metadata = file_get_contents($metadataFilePath);
+                $metadata = json_decode($metadata, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    return [];
+                }
+
+                return $metadata;
+            }
+        }
+        return [];
     }
 }

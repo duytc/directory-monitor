@@ -186,19 +186,19 @@ class TagcadeRestClient implements TagcadeRestClientInterface
 
         if ($this->checkIfHttp413($postResult)) {
             // post failed to data source due to file too large
-            return sprintf('Posted file %s fail to unified report api for %d data sources, code %d (file too large)', $file, count($dataSourceIds), 413);
+            return new URPostFileResult(413, sprintf('Posted file %s fail to unified report api for %d data sources, code %d (file too large)', $file, count($dataSourceIds), 413));
         }
 
         $postResult = json_decode($postResult, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             // json decoding error
-            return sprintf('Posted file %s fail to unified report api for %d data sources cause by json response error', $file, count($dataSourceIds));
+            return new URPostFileResult(500, sprintf('Posted file %s fail to unified report api for %d data sources cause by json response error', $file, count($dataSourceIds)));
         }
 
         if (array_key_exists('code', $postResult) && $postResult['code'] != 200) {
             // post failed to data source
-            return sprintf('Posted file %s fail to unified report api for %d data sources, code %d', $file, count($dataSourceIds), $postResult['code']);
+            return new URPostFileResult($postResult['code'], sprintf('Posted file %s fail to unified report api for %d data sources, code %d', $file, count($dataSourceIds), $postResult['code']));
         }
 
         $numbSuccess = 0;
@@ -231,12 +231,21 @@ class TagcadeRestClient implements TagcadeRestClientInterface
         }
         $numbFail = count($dataSourceIds) - $numbSuccess;
 
-        return sprintf('Posted file %s to unified report api: %d data sources successfully, %d data sources fail. Error: %s',
-            $file,
-            $numbSuccess,
-            $numbFail,
-            ($numbFail > 0 ? $errorDetail : 'none')
-        );
+        if ($numbSuccess > 0) {
+            return new URPostFileResult(200, sprintf('Posted file %s to unified report api: %d data sources successfully, %d data sources fail. Error: %s',
+                $file,
+                $numbSuccess,
+                $numbFail,
+                ($numbFail > 0 ? $errorDetail : 'none')
+            ));
+        } else {
+            return new URPostFileResult(500, sprintf('Posted file %s to unified report api: %d data sources successfully, %d data sources fail. Error: %s',
+                $file,
+                $numbSuccess,
+                $numbFail,
+                ($numbFail > 0 ? $errorDetail : 'none')
+            ));
+        }
     }
 
     /**

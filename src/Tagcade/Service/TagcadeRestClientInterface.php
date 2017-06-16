@@ -37,7 +37,7 @@ interface TagcadeRestClientInterface
      * @param string $file file path
      * @param array $metadata
      * @param string $dataSourceIds
-     * @return array [code => <http code>, message => <mixed, message>]
+     * @return URPostFileResult
      */
     public function postFileToURApiForDataSourcesViaEmailWebHook($file, array $metadata, $dataSourceIds);
 
@@ -45,7 +45,7 @@ interface TagcadeRestClientInterface
      * @param string $file file path
      * @param array $metadata
      * @param string $dataSourceIds
-     * @return array [code => <http code>, message => <mixed, message>]
+     * @return URPostFileResult
      */
     public function postFileToURApiForDataSourcesViaFetcher($file, array $metadata, $dataSourceIds);
 }

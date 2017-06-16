@@ -10,6 +10,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Filesystem\LockHandler;
 use Tagcade\Service\TagcadeRestClientInterface;
+use Tagcade\Service\URPostFileResultInterface;
 use ZipArchive;
 
 class ImporterNewFilesCommand extends ContainerAwareCommand
@@ -432,6 +433,9 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 }
             }
 
+            /**@var URPostFileResultInterface $postResult */
+            $postResult = null;
+
             /* post file to ur api for data sources */
             if ($dirSourceModule == self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK) {
                 /* create email */
@@ -448,7 +452,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
                 $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
 
-                $this->logger->info(sprintf('email %s: %s', $email, $postResult));
+                $this->logger->info(sprintf('email %s: %s', $email, $postResult->getMessage()));
             } else if ($dirSourceModule == self::DIR_SOURCE_MODULE_FETCHER) {
                 // use metadata to filter data source
                 $dataSourceIds = $this->getDataSourcesFromMetaData($metadata);
@@ -465,7 +469,16 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
                 $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
 
-                $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult));
+                $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
+            }
+
+            if (!$postResult instanceof URPostFileResultInterface) {
+                continue;
+            }
+
+            if ($postResult->getStatusCode() != 200) {
+                $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                continue;
             }
 
             /* move file to processed folder */

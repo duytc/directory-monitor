@@ -1,15 +1,18 @@
 <?php
 namespace Tagcade\Bundle\AppBundle\Command;
 
+use FilesystemIterator;
 use Psr\Log\LoggerInterface;
+use SplFileInfo;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
 {
-
     const DEFAULT_SUPPORTED_EXTENSIONS = ImporterNewFilesCommand::DEFAULT_SUPPORTED_EXTENSIONS;
+    const EXTENSION_META = 'meta';
+
     protected $archivedFiles;
     /** @var LoggerInterface */
     protected $logger;
@@ -46,14 +49,9 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         if (!is_array($supportedExtensions)) {
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
-        /* remove empty folders */
-        //$emptyFoldersCount = 0;
-        //$this->deleteEmptyFolders($this->archivedFiles, $emptyFoldersCount);
-        /* remove incompatible files */
+
         $incompatibleFilesCount = $this->deleteIncompatibleFiles($supportedExtensions);
-        /* do removing empty folders again */
-        //$emptyFoldersCount += $this->deleteEmptyFolders($this->archivedFiles, $emptyFoldersCount);
-        //$this->logger->info(sprintf('Delete %d files, %d empty folders', $incompatibleFilesCount, $emptyFoldersCount));
+
         $this->logger->info(sprintf('Delete %d incompatible files', $incompatibleFilesCount));
     }
 
@@ -94,7 +92,11 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
      */
     private function deleteIncompatibleFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
-        $incompatibleFiles = $this->getIncompatibleFiles($supportedExtensions);
+        $unSupportedFiles = $this->getUnsupportedFiles($supportedExtensions);
+        $aloneMetaDataFiles = $this->getAloneMetaDataFiles();
+
+        $incompatibleFiles = array_merge($unSupportedFiles, $aloneMetaDataFiles);
+
         if (count($incompatibleFiles) == 0) {
             $this->logger->info(sprintf('None incompatible file found. Complete directory process'));
             return 0;
@@ -119,7 +121,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
      * @param array $supportedExtensions
      * @return array
      */
-    protected function getIncompatibleFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    protected function getUnsupportedFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
     {
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
@@ -143,6 +145,40 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
     }
 
     /**
+     * @return array
+     */
+    protected function getAloneMetaDataFiles()
+    {
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
+        );
+        $fileList = [];
+        foreach ($files as $file) {
+            /** @var \SplFileInfo $file */
+            $fileFullPath = $file->getRealPath();
+            if (!is_file($fileFullPath)) {
+                continue;
+            }
+
+            $ext = pathinfo($fileFullPath, PATHINFO_EXTENSION);
+            if ($ext != self::EXTENSION_META) {
+                continue;
+            }
+
+            $parent = $file->getPath();
+
+            /** Alone file mean parent folder have only 1 file */
+            $fi = new FilesystemIterator($parent, FilesystemIterator::SKIP_DOTS);
+            if (iterator_count($fi) > 1) {
+                continue;
+            }
+
+            $fileList[] = $fileFullPath;
+        }
+        return $fileList;
+    }
+
+    /**
      * @param string $fileFullPath
      * @param array $supportedExtensions
      * @return bool
@@ -159,11 +195,11 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         // special case: files may come from email-webhook that created metadata files for unsupported files
         // e.g: file=abc.jpg and metadata-file=abc.jpg.meta
         // so that we need know these metadata files and allow remove them
-        if ($ext === 'meta') {
+        if ($ext === self::EXTENSION_META) {
             $filenameWithoutExtension = pathinfo($fileFullPath, PATHINFO_FILENAME);
             // remove .meta from supported extension
             $supportedExtensionsWithoutMetaExtension = array_filter($supportedExtensions, function ($value) {
-                return $value !== 'meta';
+                return $value !== self::EXTENSION_META;
             });
             // try to get extension (fake) from filename
             // if filePath=abc.jpg.meta => filenameWithoutExtension=abc.jpg => fakeExt=jpg

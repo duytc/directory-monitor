@@ -3,5 +3,6 @@ vendor/
 config.php
 app/config/parameters.yml
 data/
+/app/bootstrap.php.cache
 app/cache/*
 app/logs/*

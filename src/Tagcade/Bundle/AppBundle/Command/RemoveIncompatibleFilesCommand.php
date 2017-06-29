@@ -101,13 +101,11 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             $this->logger->info(sprintf('None incompatible file found. Complete directory process'));
             return 0;
         }
-        $listFile = '';
         $number = 1;
         foreach ($incompatibleFiles as $incompatibleFile) {
-            $listFile = $listFile . $number . '  ' . $incompatibleFile . PHP_EOL;
+            $this->logger->debug(sprintf('Removing file %d: %s', $number, $incompatibleFile));
             $number++;
         }
-        $this->logger->info(sprintf('List incompatible files: %s', $listFile));
         // do removing incompatible files
         foreach ($incompatibleFiles as $filePath) {
             if (is_file($filePath)) {

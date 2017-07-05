@@ -3,6 +3,7 @@
 namespace Tagcade\Bundle\AppBundle\Command;
 
 
+use Exception;
 use Pheanstalk\PheanstalkInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
@@ -385,7 +386,26 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     {
         foreach ($fileList as $directoryHash => $value) {
             if (!array_key_exists('file', $value) || empty($value['file'])) {
-                continue;
+                $metadataFilePath = $value['metadata'];
+                $metadata = file_get_contents($metadataFilePath);
+                $metadata = json_decode($metadata, true);
+
+                if (!isset($metadata['reportFileUrl'])) {
+                    // log ...
+                    // or alert ...
+                    $this->logger->info("Metadata do not have report file url");
+                    continue;
+                }
+
+                // try process downloading file for email hook only ...
+                $reportFileUrl = $metadata['reportFileUrl'];
+                $downloadFile = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
+
+                if (empty($downloadFile)) {
+                    continue;
+                }
+
+                $value['file'] = $downloadFile;
             }
 
             $filePath = $value['file'];
@@ -644,5 +664,42 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             }
         }
         return [];
+    }
+
+    /**
+     * Download File From URL
+     *
+     * @param $url
+     * @param $metaDataFilePath
+     * @return string or null if not download success
+     */
+    private function downloadFileFromURL($url, $metaDataFilePath)
+    {
+        $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+        $newFileName = str_replace('.meta', "", $metaDataFilePath);
+        $newFileName = sprintf('%s.%s', $newFileName, $extension);
+
+        try {
+            $file = fopen($url, 'rb');
+            if ($file) {
+                $newf = fopen($newFileName, 'wb');
+                if ($newf) {
+                    while (!feof($file)) {
+                        fwrite($newf, fread($file, 1024 * 8), 1024 * 8);
+                    }
+                }
+            }
+            if ($file) {
+                fclose($file);
+            }
+            if ($newf) {
+                fclose($newf);
+            }
+
+            return $newFileName;
+        } catch (Exception $e) {
+            return false;
+        }
+
     }
 }

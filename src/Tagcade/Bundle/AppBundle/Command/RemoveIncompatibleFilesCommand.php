@@ -35,14 +35,17 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         $this->logger = $container->get('logger');
         /* check if has config processed_archived_files and create directory if not existed */
         $this->archivedFiles = $this->getFileFullPath($container->getParameter('watch_root'));
+
         if (!is_dir($this->archivedFiles)) {
             if (!mkdir($this->archivedFiles)) {
                 throw new \Exception(sprintf('Can not create archivedFiles directory %s', $this->archivedFiles));
             }
         }
+
         if (!is_writable($this->archivedFiles)) {
             throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->archivedFiles));
         }
+
         /* check if has config supported_extensions */
         $supportedExtensions = $container->getParameter('not_delete_extensions');
         if (!is_array($supportedExtensions)) {
@@ -63,6 +66,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         $symfonyAppDir = $this->getContainer()->getParameter('kernel.root_dir');
         $isRelativeToProjectRootDir = (strpos($filePath, './') === 0 || strpos($filePath, '/') !== 0);
         $dataPath = $isRelativeToProjectRootDir ? sprintf('%s/%s', rtrim($symfonyAppDir, '/app'), ltrim($filePath, './')) : $filePath;
+
         return $dataPath;
     }
 
@@ -79,7 +83,9 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         foreach (glob($path . DIRECTORY_SEPARATOR . "*") as $file) {
             $empty &= is_dir($file) && $this->deleteEmptyFolders($file, $emptyFoldersCount);
         }
+
         $emptyFoldersCount += ($empty ? 1 : 0);
+
         return $empty && rmdir($path);
     }
 
@@ -92,6 +98,9 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
     private function deleteIncompatibleFiles(array $supportedExtensions)
     {
         $unSupportedFiles = $this->getUnsupportedFiles($supportedExtensions);
+
+        // be careful in case email web-hook only create one metadata file that contains url to download report files
+        // TODO: re-check this and fix if need
         $aloneMetaDataFiles = $this->getAloneMetaDataFiles();
 
         $incompatibleFiles = array_merge($unSupportedFiles, $aloneMetaDataFiles);
@@ -100,17 +109,20 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             $this->logger->info(sprintf('None incompatible file found. Complete directory process'));
             return 0;
         }
+
         $number = 1;
         foreach ($incompatibleFiles as $incompatibleFile) {
             $this->logger->debug(sprintf('Removing file %d: %s', $number, $incompatibleFile));
             $number++;
         }
+
         // do removing incompatible files
         foreach ($incompatibleFiles as $filePath) {
             if (is_file($filePath)) {
                 unlink($filePath);
             }
         }
+
         return count($incompatibleFiles);
     }
 
@@ -123,6 +135,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
+
         $fileList = [];
         foreach ($files as $file) {
             /** @var \SplFileInfo $file */
@@ -138,6 +151,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
                 continue;
             }
         }
+
         return $fileList;
     }
 
@@ -149,6 +163,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
+
         $fileList = [];
         foreach ($files as $file) {
             /** @var \SplFileInfo $file */
@@ -172,6 +187,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
 
             $fileList[] = $fileFullPath;
         }
+
         return $fileList;
     }
 
@@ -185,10 +201,12 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         if (empty($fileFullPath)) {
             return false;
         }
+
         $ext = pathinfo($fileFullPath, PATHINFO_EXTENSION);
         if (!in_array($ext, $supportedExtensions)) {
             return false;
         }
+
         // special case: files may come from email-webhook that created metadata files for unsupported files
         // e.g: file=abc.jpg and metadata-file=abc.jpg.meta
         // so that we need know these metadata files and allow remove them
@@ -205,6 +223,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
                 return false;
             }
         }
+
         return true;
     }
 }

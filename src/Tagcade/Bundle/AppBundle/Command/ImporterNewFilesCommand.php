@@ -144,7 +144,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      * ]
      *
      */
-    protected function getNewFiles($supportedExtensions)
+    protected function getNewFiles(array $supportedExtensions)
     {
         // process zip files
         $this->extractZipFilesIfAny();
@@ -153,6 +153,17 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
+        // organize all files into pair file-metadataFile
+        /**
+         * @var array $organizedFileList , format as:
+         * [
+         *     <directoryHash> => [
+         *         "file" => <file path>,
+         *         "metadata" => <metadata file path>
+         *     ],
+         *     ...
+         * ]
+         */
         $organizedFileList = [];
 
         foreach ($files as $file) {
@@ -166,8 +177,16 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $directory = $file->getPath();
+
+            // if current directory has lock file => skip all files under this directory
+            $hasLockFile = $this->hasLockFileInFolder($directory);
+            if ($hasLockFile) {
+                continue;
+            }
+
             /** Count number reports use same metadata */
-            $metaDataFilePath = $this->getMetaDataFromFolder($file->getPath());
+            $metaDataFilePath = $this->getMetaDataFileFromFolder($directory);
             $metaHash = hash('md5', $metaDataFilePath);
             if (!array_key_exists($metaHash, $this->metaFrequency)) {
                 $this->metaFrequency[$metaHash] = 0;
@@ -327,26 +346,26 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     {
         foreach ($fileList as $directoryHash => $value) {
             if (!array_key_exists('file', $value) || empty($value['file'])) {
-                $metadataFilePath = $value['metadata'];
-                $metadata = file_get_contents($metadataFilePath);
-                $metadata = json_decode($metadata, true);
+                // report file does not exist, try to get metadata and find out if need download report file from metadata info
+                // current this is for supporting Email webhook that has download link only in email body
+                $metadataFilePath = array_key_exists('metadata', $value) ? $value['metadata'] : null;
+                $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
 
                 if (!isset($metadata['reportFileUrl'])) {
-                    // log ...
-                    // or alert ...
-                    $this->logger->info("Metadata do not have report file url");
+                    // log or alert ...
+                    $this->logger->info('Got only Metadata without report file url and not contain "reportFileUrl" data => skip');
                     continue;
                 }
 
                 // try process downloading file for email hook only ...
                 $reportFileUrl = $metadata['reportFileUrl'];
-                $downloadFile = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
+                $downloadedFilePath = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
 
-                if (empty($downloadFile)) {
+                if (!$downloadedFilePath) {
                     continue;
                 }
 
-                $value['file'] = $downloadFile;
+                $value['file'] = $downloadedFilePath;
             }
 
             $filePath = $value['file'];
@@ -384,15 +403,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             }
 
             $metadataFilePath = array_key_exists('metadata', $value) ? $value['metadata'] : null;
-            $metadata = [];
-            if (is_string($metadataFilePath) && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
-                $metadata = file_get_contents($metadataFilePath);
-                $metadata = json_decode($metadata, true);
-
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    $metadata = [];
-                }
-            }
+            $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
 
             /**@var URPostFileResultInterface $postResult */
             $postResult = null;
@@ -553,11 +564,15 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     }
 
     /**
-     * @param $folder
-     * @return mixed
+     * @param string $folder
+     * @return string|bool return metadata file path, false if input invalid or metadata file error
      */
-    private function getMetaDataFromFolder($folder)
+    private function getMetaDataFileFromFolder($folder)
     {
+        if (!is_string($folder) || empty($folder)) {
+            return false;
+        }
+
         $subFiles = scandir($folder);
 
         $subFiles = array_map(function ($subFile) use ($folder) {
@@ -572,35 +587,90 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             $subFile = new \SplFileInfo($subFile);
             if ($subFile->getExtension() == 'meta') {
                 $metadataFilePath = $subFile->getRealPath();
-                $metadata = file_get_contents($metadataFilePath);
-                json_decode($metadata, true);
 
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    return [];
-                }
+                // not need get content here. TODO: remove
+                //$metadata = file_get_contents($metadataFilePath);
+                //json_decode($metadata, true);
+                //
+                //if (json_last_error() !== JSON_ERROR_NONE) {
+                //    return [];
+                //}
 
                 return $metadataFilePath;
             }
         }
+
+        return false;
+    }
+
+    /**
+     * @param $metadataFilePath
+     * @return array
+     */
+    private function getMetaDataFromFilePath($metadataFilePath)
+    {
+        $metadata = [];
+        if (is_string($metadataFilePath) && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+            $metadata = file_get_contents($metadataFilePath);
+            $metadata = json_decode($metadata, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE || !$metadata) {
+                $metadata = [];
+            }
+        }
+
+        return $metadata;
+    }
+
+    /**
+     * @param string $folder
+     * @return bool
+     */
+    private function hasLockFileInFolder($folder)
+    {
+        if (empty($folder) || !is_string($folder)) {
+            return false;
+        }
+
+        $subFiles = scandir($folder);
+
+        $subFiles = array_map(function ($subFile) use ($folder) {
+            return $folder . '/' . $subFile;
+        }, $subFiles);
+
+        $subFiles = array_filter($subFiles, function ($file) {
+            return is_file($file);
+        });
+
+        foreach ($subFiles as $subFile) {
+            $subFile = new \SplFileInfo($subFile);
+            if ($subFile->getExtension() == 'lock') {
+                return true;
+            }
+        }
+
         return false;
     }
 
     /**
      * Download File From URL
      *
-     * @param $url
-     * @param $metaDataFilePath
-     * @return string or null if not download success
+     * @param string $url
+     * @param string $metaDataFilePath
+     * @return string|false string as downloaded file path, false if not download success
      */
     private function downloadFileFromURL($url, $metaDataFilePath)
     {
+        if (empty($url) || empty($metaDataFilePath) || !is_string($url) || !is_string($metaDataFilePath)) {
+            return false;
+        }
+
         $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
         $newFileName = str_replace('.meta', "", $metaDataFilePath);
         $newFileName = sprintf('%s.%s', $newFileName, $extension);
 
         try {
             $file = fopen($url, 'rb');
-            $newFile = null;
             if ($file) {
                 $newFile = fopen($newFileName, 'wb');
                 if ($newFile) {
@@ -608,10 +678,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                         fwrite($newFile, fread($file, 1024 * 8), 1024 * 8);
                     }
                 }
+            } else {
+                return false;
             }
+
             if ($file) {
                 fclose($file);
             }
+
             if ($newFile) {
                 fclose($newFile);
             }
@@ -620,6 +694,5 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         } catch (Exception $e) {
             return false;
         }
-
     }
 }

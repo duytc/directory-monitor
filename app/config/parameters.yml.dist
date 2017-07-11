@@ -22,6 +22,7 @@ parameters:
         - csv
         - xls
         - xlsx
+        - meta
         - zip
 
     not_delete_extensions:
@@ -30,3 +31,4 @@ parameters:
         - xlsx
         - zip
         - meta
+        - lock

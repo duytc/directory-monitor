@@ -22,5 +22,11 @@ parameters:
         - csv
         - xls
         - xlsx
-        - meta
         - zip
+
+    not_delete_extensions:
+        - csv
+        - xls
+        - xlsx
+        - zip
+        - meta

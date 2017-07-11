@@ -20,8 +20,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     const DIR_SOURCE_MODULE_EMAIL_WEB_HOOK = 'email';
     const DIR_SOURCE_MODULE_FETCHER = 'fetcher';
 
-    const DEFAULT_SUPPORTED_EXTENSIONS = ['csv', 'xls', 'xlsx', 'meta', 'zip'];
-
     public static $SUPPORTED_DIR_SOURCE_MODULE_MAP = [
         self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK,
         self::DIR_SOURCE_MODULE_FETCHER
@@ -33,6 +31,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     protected $watchRoot;
     protected $archivedFiles;
     protected $ttr;
+
+    protected $metaFrequency = [];
 
     /** @var TagcadeRestClientInterface */
     protected $restClient;
@@ -99,15 +99,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
         $this->ttr = $ttr;
 
-        $duplicateFileCount = 0;
         $supportedExtensions = $container->getParameter('supported_extensions');
         if (!is_array($supportedExtensions)) {
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
 
-        $newFiles = $this->getNewFiles($duplicateFileCount, $supportedExtensions);
+        $newFiles = $this->getNewFiles($supportedExtensions);
 
-        $this->logger->info(sprintf('Found %d new files and other %d duplications', count($newFiles), $duplicateFileCount));
+        $this->logger->info(sprintf('Found %d new files', count($newFiles)));
 
         /* post file to unified reports api */
         $this->postFilesToUnifiedReportApi($newFiles);
@@ -133,7 +132,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     /**
      * get new files from watch directory
      *
-     * @param int $duplicateFileCount
      * @param array $supportedExtensions
      * @return array format as:
      *
@@ -146,7 +144,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      * ]
      *
      */
-    protected function getNewFiles(&$duplicateFileCount = 0, $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    protected function getNewFiles($supportedExtensions)
     {
         // process zip files
         $this->extractZipFilesIfAny();
@@ -155,18 +153,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
-        /**
-         * @var array $fileList , format as:
-         * [
-         *     <md5> => [
-         *         "filePath" => <file path>,
-         *         "directoryHash" => <hash of file directory>,
-         *         "fileName" => <file name>
-         *     ]
-         * ]
-         */
-        $fileList = [];
-        $duplicateFileCount = 0;
+        $organizedFileList = [];
+
         foreach ($files as $file) {
             /** @var \SplFileInfo $file */
             $fullFilePath = $file->getRealPath();
@@ -178,64 +166,17 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
-            $fileName = $file->getFilename();
-            $directory = $file->getPath();
-
-            // append dataSourceId to avoid duplicate file in same dataSource
-            $metadata = $this->getMetaDataFromFolder($directory);
-
-            $dataSourceId = 0;
-            if (array_key_exists('dataSourceId', $metadata)) {
-                $dataSourceId = $metadata['dataSourceId'];
+            /** Count number reports use same metadata */
+            $metaDataFilePath = $this->getMetaDataFromFolder($file->getPath());
+            $metaHash = hash('md5', $metaDataFilePath);
+            if (!array_key_exists($metaHash, $this->metaFrequency)) {
+                $this->metaFrequency[$metaHash] = 0;
             }
+            $this->metaFrequency[$metaHash] += 1;
 
-            $date = 0;
-            if (array_key_exists('date', $metadata)) {
-                $date = $metadata['date'];
-            }
-
-            $md5 = hash_file('md5', $fullFilePath);
-            $md5 = $dataSourceId . '_' . $date . '_' . $md5;
-
-            if (!array_key_exists($md5, $fileList)) {
-                $fileList[$md5] = [
-                    'filePath' => $fullFilePath,
-                    'directoryHash' => hash('md5', $directory),
-                    'fileName' => $fileName
-                ];
-            } else {
-                $duplicateFileCount++;
-            }
-        }
-
-        // organize all files into pair file-metadataFile
-        /**
-         * @var array $organizedFileList , format as:
-         * [
-         *     <directoryHash> => [
-         *         "file" => <file path>,
-         *         "metadata" => <metadata file path>
-         *     ],
-         *     ...
-         * ]
-         */
-        $organizedFileList = [];
-        foreach ($fileList as $md5 => $fileInfo) {
-            $filePath = $fileInfo['filePath'];
-            $directoryHash = $fileInfo['directoryHash'];
-            $fileName = $fileInfo['fileName'];
-
-            // check if end with .meta, so that is metadata file
-            if (strpos($fileName, '.meta') == (strlen($fileName) - 5)) { // 5 is length of '.meta'
-                $organizedFileList[$directoryHash]['metadata'] = $filePath;
-            } else {
-                $organizedFileList[$directoryHash]['file'] = $filePath;
-
-                // set default metadata value to `false` when not yet existed
-                if (!array_key_exists('metadata', $organizedFileList[$directoryHash])) {
-                    $organizedFileList[$directoryHash]['metadata'] = false;
-                }
-            }
+            $md5 = hash('md5', $fullFilePath);
+            $organizedFileList[$md5]['file'] = $fullFilePath;
+            $organizedFileList[$md5]['metadata'] = $metaDataFilePath;
         }
 
         return $organizedFileList;
@@ -248,7 +189,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      * @param array $supportedExtensions
      * @return bool
      */
-    protected function supportFile($fileFullPath, array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    protected function supportFile($fileFullPath, array $supportedExtensions)
     {
         if (empty($fileFullPath)) {
             return false;
@@ -504,6 +445,18 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             /* move file to processed folder */
             $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
 
+            //Check if one meta use for many report (Spring Serve)
+            $metaHash = hash('md5', $metadataFilePath);
+            if (!array_key_exists($metaHash, $this->metaFrequency)) {
+                continue;
+            }
+
+            $this->metaFrequency[$metaHash] -= 1;
+
+            if ($this->metaFrequency[$metaHash] > 0) {
+                continue;
+            }
+
             /* also move metadata file (if existed) to processed folder */
             if (file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
                 $this->moveFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
@@ -523,40 +476,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         /* get list data sources */
         try {
             $dataSources = $this->restClient->getListDataSourcesByEmail($publisherId, $email);
-        } catch (\Exception $e) {
-            $this->logger->error($e->getMessage());
-            return false;
-        }
-
-        if (!is_array($dataSources)) {
-            return false;
-        }
-
-        /* convert to data source ids */
-        $dataSourceIds = [];
-        foreach ($dataSources as $dataSource) {
-            if (!is_array($dataSource) || !array_key_exists('id', $dataSource)) {
-                continue;
-            }
-
-            $dataSourceIds[] = $dataSource['id'];
-        }
-
-        return count($dataSourceIds) > 0 ? $dataSourceIds : false;
-    }
-
-    /**
-     * get DataSource Ids
-     *
-     * @param int $publisherId
-     * @param string $partnerCName
-     * @return array|bool false if no data source found
-     */
-    private function getDataSourceIdsByIntegration($publisherId, $partnerCName)
-    {
-        /* get list data sources */
-        try {
-            $dataSources = $this->restClient->getListDataSourcesByIntegration($publisherId, $partnerCName);
         } catch (\Exception $e) {
             $this->logger->error($e->getMessage());
             return false;
@@ -654,16 +573,16 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             if ($subFile->getExtension() == 'meta') {
                 $metadataFilePath = $subFile->getRealPath();
                 $metadata = file_get_contents($metadataFilePath);
-                $metadata = json_decode($metadata, true);
+                json_decode($metadata, true);
 
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     return [];
                 }
 
-                return $metadata;
+                return $metadataFilePath;
             }
         }
-        return [];
+        return false;
     }
 
     /**
@@ -681,19 +600,20 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
         try {
             $file = fopen($url, 'rb');
+            $newFile = null;
             if ($file) {
-                $newf = fopen($newFileName, 'wb');
-                if ($newf) {
+                $newFile = fopen($newFileName, 'wb');
+                if ($newFile) {
                     while (!feof($file)) {
-                        fwrite($newf, fread($file, 1024 * 8), 1024 * 8);
+                        fwrite($newFile, fread($file, 1024 * 8), 1024 * 8);
                     }
                 }
             }
             if ($file) {
                 fclose($file);
             }
-            if ($newf) {
-                fclose($newf);
+            if ($newFile) {
+                fclose($newFile);
             }
 
             return $newFileName;

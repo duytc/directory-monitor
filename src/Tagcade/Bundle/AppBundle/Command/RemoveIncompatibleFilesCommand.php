@@ -10,7 +10,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
 {
-    const DEFAULT_SUPPORTED_EXTENSIONS = ImporterNewFilesCommand::DEFAULT_SUPPORTED_EXTENSIONS;
     const EXTENSION_META = 'meta';
 
     protected $archivedFiles;
@@ -45,7 +44,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
             throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->archivedFiles));
         }
         /* check if has config supported_extensions */
-        $supportedExtensions = $container->getParameter('supported_extensions');
+        $supportedExtensions = $container->getParameter('not_delete_extensions');
         if (!is_array($supportedExtensions)) {
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
@@ -90,7 +89,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
      * @param array $supportedExtensions
      * @return int
      */
-    private function deleteIncompatibleFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    private function deleteIncompatibleFiles(array $supportedExtensions)
     {
         $unSupportedFiles = $this->getUnsupportedFiles($supportedExtensions);
         $aloneMetaDataFiles = $this->getAloneMetaDataFiles();
@@ -119,7 +118,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
      * @param array $supportedExtensions
      * @return array
      */
-    protected function getUnsupportedFiles(array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    protected function getUnsupportedFiles(array $supportedExtensions)
     {
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($this->archivedFiles, \RecursiveDirectoryIterator::SKIP_DOTS)
@@ -181,7 +180,7 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
      * @param array $supportedExtensions
      * @return bool
      */
-    protected function supportFile($fileFullPath, array $supportedExtensions = self::DEFAULT_SUPPORTED_EXTENSIONS)
+    protected function supportFile($fileFullPath, array $supportedExtensions)
     {
         if (empty($fileFullPath)) {
             return false;

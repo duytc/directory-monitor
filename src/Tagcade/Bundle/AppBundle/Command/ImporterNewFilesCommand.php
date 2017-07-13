@@ -20,6 +20,9 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     const DIR_SOURCE_MODULE_EMAIL_WEB_HOOK = 'email';
     const DIR_SOURCE_MODULE_FETCHER = 'fetcher';
 
+    const EXTENSION_META = 'meta';
+    const EXTENSION_LOCK = 'lock';
+
     public static $SUPPORTED_DIR_SOURCE_MODULE_MAP = [
         self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK,
         self::DIR_SOURCE_MODULE_FETCHER
@@ -32,7 +35,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     protected $archivedFiles;
     protected $ttr;
 
-    protected $metaFrequency = [];
+    protected $metadataFrequency = [];
 
     /** @var TagcadeRestClientInterface */
     protected $restClient;
@@ -136,13 +139,12 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      * @return array format as:
      *
      * [
-     *     <file name> => [
+     *     [
      *         "file" => <file path>,
      *         "metadata" => <metadata file path>
      *     ],
      *     ...
      * ]
-     *
      */
     protected function getNewFiles(array $supportedExtensions)
     {
@@ -153,18 +155,19 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             new \RecursiveDirectoryIterator($this->watchRoot, \RecursiveDirectoryIterator::SKIP_DOTS)
         );
 
-        // organize all files into pair file-metadataFile
+        // build fileList for each directory
+        // notice: may be many report files with only one metadata in directory (e.g Spring Serve for account report)
         /**
-         * @var array $organizedFileList , format as:
+         * @var array $fileList , format as:
          * [
          *     <directoryHash> => [
-         *         "file" => <file path>,
+         *         "files" => [<file path>, ...],
          *         "metadata" => <metadata file path>
          *     ],
          *     ...
          * ]
          */
-        $organizedFileList = [];
+        $fileList = [];
 
         foreach ($files as $file) {
             /** @var \SplFileInfo $file */
@@ -185,17 +188,82 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
-            /** Count number reports use same metadata */
-            $metaDataFilePath = $this->getMetaDataFileFromFolder($directory);
-            $metaHash = hash('md5', $metaDataFilePath);
-            if (!array_key_exists($metaHash, $this->metaFrequency)) {
-                $this->metaFrequency[$metaHash] = 0;
-            }
-            $this->metaFrequency[$metaHash] += 1;
+            $directoryHash = hash('md5', $directory);
 
-            $md5 = hash('md5', $fullFilePath);
-            $organizedFileList[$md5]['file'] = $fullFilePath;
-            $organizedFileList[$md5]['metadata'] = $metaDataFilePath;
+            /**
+             * very important: may metadata file or report file comes before each other
+             * so that very careful when build $organizedFileList
+             */
+
+            if ($file->getExtension() === self::EXTENSION_META) {
+                // if metadata file
+                if (!array_key_exists($directoryHash, $fileList) || !array_key_exists('files', $fileList[$directoryHash])) {
+                    // init if not yet have key 'file' in $organizedFileList
+                    // this is needed for case standalone metadata file
+                    $fileList[$directoryHash]['files'] = [];
+                }
+
+                if (!array_key_exists($directoryHash, $fileList) || !array_key_exists('metadata', $fileList[$directoryHash])) {
+                    // init if not yet have key 'metadata' in $organizedFileList
+                    // use directly path instead of getting by getMetaDataFileFromFolder()
+                    $fileList[$directoryHash]['metadata'] = $fullFilePath;
+                }
+            } else {
+                // if report file
+                $reportFilePath = $fullFilePath;
+
+                $metaDataFilePath = (array_key_exists($directoryHash, $fileList) && array_key_exists('metadata', $fileList[$directoryHash]))
+                    ? $fileList[$directoryHash]['metadata'] // metadata is already in $organizedFileList
+                    : $this->getMetaDataFileFromFolder($directory); // metadata IS NOT already in $organizedFileList
+
+                if (!empty($metaDataFilePath)) {
+                    // Count number reports use same metadata
+                    $metadataHash = $this->getMetadataHash($metaDataFilePath);
+                    if (!array_key_exists($metadataHash, $this->metadataFrequency)) {
+                        $this->metadataFrequency[$metadataHash] = 0;
+                    }
+                    $this->metadataFrequency[$metadataHash] += 1;
+                }
+
+                if (!array_key_exists($directoryHash, $fileList) || !array_key_exists('files', $fileList[$directoryHash])) {
+                    $fileList[$directoryHash]['files'] = []; // init if not yet have key 'file' in $organizedFileList
+                }
+                $fileList[$directoryHash]['files'][] = $reportFilePath;
+                $fileList[$directoryHash]['metadata'] = $metaDataFilePath;
+            }
+        }
+
+        // organize into pairs file-metadata
+        // notice: may be report file and metadata stand alone
+        /**
+         * @var array $organizedFileList , format as:
+         * [
+         *     [
+         *         "file" => <file path>,
+         *         "metadata" => <metadata file path>
+         *     ],
+         *     ...
+         * ]
+         */
+        $organizedFileList = [];
+        foreach ($fileList as $directoryHash => $item) {
+            if (!array_key_exists('files', $item) || !array_key_exists('metadata', $item)) {
+                continue;
+            }
+
+            $reportFilePaths = $item['files'];
+            $metaDataFilePath = $item['metadata'];
+
+            if (!is_array($reportFilePaths)) {
+                continue;
+            }
+
+            foreach ($reportFilePaths as $reportFilePath) {
+                $organizedFileList[] = [
+                    'file' => $reportFilePath,
+                    'metadata' => $metaDataFilePath,
+                ];
+            }
         }
 
         return $organizedFileList;
@@ -223,12 +291,12 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         // special case: files may come from email-webhook that created metadata files for unsupported files
         // e.g: file=abc.jpg and metadata-file=abc.jpg.meta
         // so that we need know these metadata files and allow remove them
-        if ($ext === 'meta') {
+        if ($ext === self::EXTENSION_META) {
             $filenameWithoutExtension = pathinfo($fileFullPath, PATHINFO_FILENAME);
 
             // remove .meta from supported extension
             $supportedExtensionsWithoutMetaExtension = array_filter($supportedExtensions, function ($value) {
-                return $value !== 'meta';
+                return $value !== self::EXTENSION_META;
             });
 
             // try to get extension (fake) from filename
@@ -300,7 +368,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 }
 
                 $ext = pathinfo($fileInCurrentDir, PATHINFO_EXTENSION);
-                if ($ext !== 'meta') {
+                if ($ext !== self::EXTENSION_META) {
                     continue;
                 }
 
@@ -344,7 +412,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      */
     private function postFilesToUnifiedReportApi(array $fileList)
     {
-        foreach ($fileList as $directoryHash => $value) {
+        foreach ($fileList as $index => $value) {
             if (!array_key_exists('file', $value) || empty($value['file'])) {
                 // report file does not exist, try to get metadata and find out if need download report file from metadata info
                 // current this is for supporting Email webhook that has download link only in email body
@@ -456,20 +524,21 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             /* move file to processed folder */
             $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
 
-            //Check if one meta use for many report (Spring Serve)
-            $metaHash = hash('md5', $metadataFilePath);
-            if (!array_key_exists($metaHash, $this->metaFrequency)) {
-                continue;
+            /*
+             * also move metadata file (if needed and existed) to processed folder
+             * notice: one meta may be used for many report files (e.g Spring Serve for account report)
+             */
+            $isNeedRemoveMetadataFile = true;
+            $metadataHash = $this->getMetadataHash($metadataFilePath);
+            if (array_key_exists($metadataHash, $this->metadataFrequency)) {
+                $this->metadataFrequency[$metadataHash]--;
+
+                if ($this->metadataFrequency[$metadataHash] > 0) {
+                    $isNeedRemoveMetadataFile = false; // not need remove if still have report files relate to this metadata file
+                }
             }
 
-            $this->metaFrequency[$metaHash] -= 1;
-
-            if ($this->metaFrequency[$metaHash] > 0) {
-                continue;
-            }
-
-            /* also move metadata file (if existed) to processed folder */
-            if (file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+            if ($isNeedRemoveMetadataFile && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
                 $this->moveFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
             }
         }
@@ -585,18 +654,8 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
         foreach ($subFiles as $subFile) {
             $subFile = new \SplFileInfo($subFile);
-            if ($subFile->getExtension() == 'meta') {
-                $metadataFilePath = $subFile->getRealPath();
-
-                // not need get content here. TODO: remove
-                //$metadata = file_get_contents($metadataFilePath);
-                //json_decode($metadata, true);
-                //
-                //if (json_last_error() !== JSON_ERROR_NONE) {
-                //    return [];
-                //}
-
-                return $metadataFilePath;
+            if ($subFile->getExtension() == self::EXTENSION_META) {
+                return $subFile->getRealPath();
             }
         }
 
@@ -644,7 +703,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
         foreach ($subFiles as $subFile) {
             $subFile = new \SplFileInfo($subFile);
-            if ($subFile->getExtension() == 'lock') {
+            if ($subFile->getExtension() == self::EXTENSION_LOCK) {
                 return true;
             }
         }
@@ -694,5 +753,15 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         } catch (Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * get Metadata Hash from file path
+     * @param string $metadataFilePath
+     * @return string
+     */
+    private function getMetadataHash($metadataFilePath)
+    {
+        return hash('md5', $metadataFilePath);
     }
 }

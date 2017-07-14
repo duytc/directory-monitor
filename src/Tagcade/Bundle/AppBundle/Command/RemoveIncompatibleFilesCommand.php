@@ -185,6 +185,11 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $metadata = $this->getMetaDataFromFilePath($fileFullPath);
+            if (isset($metadata['reportFileUrl'])) {
+                continue;
+            }
+
             $fileList[] = $fileFullPath;
         }
 
@@ -225,5 +230,24 @@ class RemoveIncompatibleFilesCommand extends ContainerAwareCommand
         }
 
         return true;
+    }
+
+    /**
+     * @param $metadataFilePath
+     * @return array
+     */
+    private function getMetaDataFromFilePath($metadataFilePath)
+    {
+        $metadata = [];
+        if (is_string($metadataFilePath) && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+            $metadata = file_get_contents($metadataFilePath);
+            $metadata = json_decode($metadata, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE || !$metadata) {
+                $metadata = [];
+            }
+        }
+
+        return $metadata;
     }
 }

@@ -264,6 +264,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                     'metadata' => $metaDataFilePath,
                 ];
             }
+
+            /** For case alone metadata from email web hook */
+            if (count($reportFilePaths) < 1) {
+                $organizedFileList[] = [
+                    'file' => null,
+                    'metadata' => $metaDataFilePath,
+                ];
+            }
         }
 
         return $organizedFileList;

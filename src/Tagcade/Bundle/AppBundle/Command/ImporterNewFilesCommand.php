@@ -510,6 +510,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
 
                 $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
+                $this->logger->info('metadata: ' . json_encode($metadata));
             }
 
             if (!$postResult instanceof URPostFileResultInterface) {

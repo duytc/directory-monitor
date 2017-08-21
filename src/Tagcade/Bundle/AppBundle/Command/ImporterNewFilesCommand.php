@@ -732,7 +732,13 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             return false;
         }
 
-        $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+        $extension = $this->getExtensionOfReportFromURL($url);
+
+        /** Quit when could not detect extension from URL */
+        if (empty($extension)) {
+            return false;
+        }
+
         $newFileName = str_replace('.meta', "", $metaDataFilePath);
         $newFileName = sprintf('%s.%s', $newFileName, $extension);
 
@@ -771,5 +777,65 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     private function getMetadataHash($metadataFilePath)
     {
         return hash('md5', $metadataFilePath);
+    }
+
+    /**
+     * @param $url
+     * @return string|null|false
+     */
+    private function getExtensionOfReportFromURL($url)
+    {
+        $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+
+        if (!empty($extension)) {
+            return $extension;
+        }
+
+        $headers = $this->getHeaders($url);
+        switch ($headers['content_type']) {
+            case 'text/csv':
+                $extension = 'csv';
+                break;
+            case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+                $extension = 'xls';
+                break;
+            case 'text/xls':
+                $extension = 'xls';
+                break;
+            case 'text/xlsx':
+                $extension = 'xlsx';
+                break;
+            case 'text/json':
+                $extension = 'json';
+                break;
+            case 'text/zip':
+                $extension = 'zip';
+                break;
+            default:
+                return false;
+        }
+
+        return $extension;
+    }
+
+    /**
+     * Get Headers function
+     * @param string $url
+     * @return array
+     */
+    private function getHeaders($url)
+    {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
+        curl_setopt($ch, CURLOPT_NOBODY, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
+        curl_exec($ch);
+        $headers = curl_getinfo($ch);
+        curl_close($ch);
+
+        return $headers;
     }
 }

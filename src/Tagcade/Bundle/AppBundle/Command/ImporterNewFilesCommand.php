@@ -734,6 +734,13 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             return false;
         }
 
+        $url = trim($url);
+
+        // ensure there is a http or https protocol, this may cause problems with ftp links but we haven't seen any yet
+        if (strpos($url, 'http') !== 0) {
+            $url = 'http://' . $url;
+        }
+
         $extension = $this->getExtensionOfReportFromURL($url);
 
         /** Quit when could not detect extension from URL */

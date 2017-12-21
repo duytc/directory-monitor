@@ -13,10 +13,10 @@ parameters:
     processed_archived_files: ./data/processed
     tagcade_user_name: admin
     tagcade_user_password: '123456'
-    tagcade_get_token_url: 'http://api.tagcade.dev/app_debug.php/api/v1/getToken'
-    ur_get_data_sources_by_integration_url: 'http://api.unified-reports.dev/app_dev.php/api/v1/datasources/byintegration'
-    ur_get_data_sources_by_email_url: 'http://api.unified-reports.dev/app_dev.php/api/v1/datasources/byemail'
-    ur_receive_file_url: 'http://api.unified-reports.dev/app_dev.php/api/v1/datasources/entry'
+    tagcade_get_token_url: 'http://api.pubvantage-dev.test/app_debug.php/api/v1/getToken'
+    ur_get_data_sources_by_integration_url: 'http://ur-api.pubvantage-dev.test/app_dev.php/api/v1/datasources/byintegration'
+    ur_get_data_sources_by_email_url: 'http://ur-api.pubvantage-dev.test/app_dev.php/api/v1/datasources/byemail'
+    ur_receive_file_url: 'http://ur-api.pubvantage-dev.test/app_dev.php/api/v1/datasources/entry'
     ur_email_template: pub$PUBLISHER_ID$.$TOKEN$@unified-reports.dev
     supported_extensions:
         - csv

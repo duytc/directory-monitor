@@ -198,12 +198,14 @@ class TagcadeRestClient implements TagcadeRestClientInterface
 
         if (array_key_exists('code', $postResult) && $postResult['code'] != 200) {
             // post failed to data source
-            return new URPostFileResult($postResult['code'], sprintf('Posted file %s fail to unified report api for %d data sources, code %d', $file, count($dataSourceIds), $postResult['code']));
+            $message = array_key_exists('message', $postResult) ? $postResult['message'] : "unexpected error";
+
+            return new URPostFileResult($postResult['code'], sprintf('Posted file %s fail to unified report api for %d data sources. Due to %s. Code %d', $file, count($dataSourceIds), $message, $postResult['code']));
         }
 
         $numbSuccess = 0;
         $errorDetail = '';
-        foreach ($postResult as $postDSResult) {
+        foreach ($postResult as $key => $postDSResult) {
             if (!is_array($postDSResult) || count($postDSResult) < 1) {
                 continue;
             }
@@ -221,7 +223,7 @@ class TagcadeRestClient implements TagcadeRestClientInterface
             if (!$isPostSuccess) {
                 $dataSourceId = (array_key_exists('dataSource', $postDSResult_i))
                     ? $postDSResult_i['dataSource']
-                    : 'unknown';
+                    : $key;
 
                 $message = (array_key_exists('message', $postDSResult_i))
                     ? $postDSResult_i['message']

@@ -515,7 +515,13 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                     continue;
                 }
 
-                $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
+                try {
+                    $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
+                } catch (Exception $e) {
+                    $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                    $this->logger->error($e);
+                    continue;
+                }
 
                 // log file to figure out
                 $this->logger->info(sprintf('metadata file is %s, contents: %s', $metadataFilePath, json_encode($metadata)));
@@ -528,6 +534,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             if ($postResult->getStatusCode() != 200) {
                 $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                $this->logger->error($postResult->getMessage());
                 continue;
             }
 

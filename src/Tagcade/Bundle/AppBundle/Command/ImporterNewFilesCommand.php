@@ -2,9 +2,9 @@
 
 namespace Tagcade\Bundle\AppBundle\Command;
 
-
 use Exception;
 use Pheanstalk\PheanstalkInterface;
+use PHPExcel;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
@@ -515,27 +515,33 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                     continue;
                 }
 
-                try {
-                    $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
-                } catch (Exception $e) {
-                    $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
-                    $this->logger->error($e);
-                    continue;
+                $empty = $this->checkFileIsEmptyOrNot($filePath);
+                if ($empty) {
+                    // file is empty
+                    $this->logger->warning(sprintf('Due to file(%s) is empty. So this file did not upload to UR, move file to Process Dir', $filePath));
+                } else {
+                    try {
+                        $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
+                    } catch (Exception $e) {
+                        $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                        $this->logger->error($e);
+                        continue;
+                    }
+
+                    // log file to figure out
+                    $this->logger->info(sprintf('metadata file is %s, contents: %s', $metadataFilePath, json_encode($metadata)));
+                    $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
+
+                    if (!$postResult instanceof URPostFileResultInterface) {
+                        continue;
+                    }
+
+                    if ($postResult->getStatusCode() != 200) {
+                        $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                        $this->logger->error($postResult->getMessage());
+                        continue;
+                    }
                 }
-
-                // log file to figure out
-                $this->logger->info(sprintf('metadata file is %s, contents: %s', $metadataFilePath, json_encode($metadata)));
-                $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
-            }
-
-            if (!$postResult instanceof URPostFileResultInterface) {
-                continue;
-            }
-
-            if ($postResult->getStatusCode() != 200) {
-                $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
-                $this->logger->error($postResult->getMessage());
-                continue;
             }
 
             /* move file to processed folder */
@@ -854,5 +860,35 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         curl_close($ch);
 
         return $headers;
+    }
+
+    /**
+     * check file is empty or not
+     * @param string $filePath
+     * @return boolean
+     */
+    private function checkFileIsEmptyOrNot($filePath)
+    {
+        $fileTypeSupport = ['xls', 'xlsx', 'csv'];
+        $fileTypeSupportExcel = ['xls', 'xlsx'];
+        $fileType = pathinfo($filePath, PATHINFO_EXTENSION);
+
+        if (!in_array($fileType, $fileTypeSupport)) {
+            return true;
+        }
+
+        $empty = false;
+        if (in_array($fileType, $fileTypeSupportExcel)) {
+            $objPHPExcel = new PHPExcel();
+            $content = $objPHPExcel->getActiveSheet()->toArray();
+            $empty = !is_array($content) || empty($content) || (count($content) === 1 && !isset($content[0]) || !isset($content[0][0]));
+        }
+
+        if ($fileType == 'csv') {
+            $content = file($filePath);
+            $empty = !is_array($content) || empty($content) || (count($content) === 1 && empty($content[0]) || $content[0] == "\n");
+        }
+
+        return $empty;
     }
 }

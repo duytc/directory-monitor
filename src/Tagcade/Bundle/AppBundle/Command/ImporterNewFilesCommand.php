@@ -95,13 +95,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->watchRoot));
         }
 
-        $ttr = (int)$container->getParameter('pheanstalk_ttr');
-        if ($ttr < 1) {
-            $ttr = PheanstalkInterface::DEFAULT_TTR;
-        }
-
-        $this->ttr = $ttr;
-
         $supportedExtensions = $container->getParameter('supported_extensions');
         if (!is_array($supportedExtensions)) {
             throw new \Exception('Invalid configuration of param supported_extensions');
@@ -814,7 +807,10 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         }
 
         $headers = $this->getHeaders($url);
-        switch ($headers['content_type']) {
+
+        $contentType = preg_replace('/;.*/', '', $headers['content_type']);
+
+        switch ($contentType) {
             case 'text/csv':
             case 'text/csv;charset=UTF-8':
                 $extension = 'csv';

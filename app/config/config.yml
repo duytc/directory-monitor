@@ -29,9 +29,3 @@ framework:
         handler_id:  ~
     fragments:       ~
     http_method_override: true
-
-leezy_pheanstalk:
-    pheanstalks:
-        primary:
-            server: "%pheanstalk_primary_host%"
-            default: true

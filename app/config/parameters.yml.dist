@@ -7,8 +7,6 @@ parameters:
 
     # root directory to have files scanned
     watch_root: /var/www/unified-report-directory-monitor.tagcade.dev/data/received
-    pheanstalk_ttr: 60
-    pheanstalk_primary_host: 127.0.0.1
 
     processed_archived_files: ./data/processed
     tagcade_user_name: admin

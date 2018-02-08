@@ -18,7 +18,6 @@
         "sensio/distribution-bundle": "~5.0",
         "sensio/framework-extra-bundle": "^3.0.2",
         "incenteev/composer-parameter-handler": "~2.0",
-        "leezy/pheanstalk-bundle": "~3.0",
         "liuggio/excelbundle": "^2.0",
         "jowy/rest-client": "^0.1.3"
     },

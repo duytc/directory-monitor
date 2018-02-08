@@ -438,6 +438,9 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             }
 
             $filePath = $value['file'];
+
+            $this->logger->info(sprintf("Starting to process file %s", $filePath));
+
             $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
 
             // Extract network name and publisher id from file path

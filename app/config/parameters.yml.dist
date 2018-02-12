@@ -9,6 +9,7 @@ parameters:
     watch_root: /var/www/unified-report-directory-monitor.tagcade.dev/data/received
 
     processed_archived_files: ./data/processed
+    invalid_archived_files: ./data/invalid
     tagcade_user_name: admin
     tagcade_user_password: '123456'
     tagcade_get_token_url: 'http://api.pubvantage-dev.test/app_debug.php/api/v1/getToken'
@@ -30,3 +31,9 @@ parameters:
         - zip
         - meta
         - lock
+
+    tagcade.redis.host: 127.0.0.1
+    tagcade.redis.port: 6379
+    tagcade.red_lock.retry_delay: 200
+    tagcade.red_lock.retry_count: 3
+    tagcade.max_retry_file: 5

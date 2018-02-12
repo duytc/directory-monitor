@@ -6,6 +6,19 @@ services:
         class: RestClient\CurlRestClient
         public: false
 
+    tagcade.service.redis_cache:
+        class: Redis
+        calls:
+            - [connect, ["%tagcade.redis.host%","%tagcade.redis.port%"]]
+
+    tagcade.service.red_lock:
+        class: Tagcade\Service\RedLock
+        arguments:
+            -
+                - '@tagcade.service.redis_cache'
+            - '%tagcade.red_lock.retry_delay%'
+            - '%tagcade.red_lock.retry_count%'
+
     tagcade_app.service.tagcade.rest_client:
         class: Tagcade\Service\TagcadeRestClient
         arguments:

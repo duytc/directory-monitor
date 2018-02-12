@@ -9,7 +9,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Filesystem\LockHandler;
+use Tagcade\Service\RedLock;
 use Tagcade\Service\TagcadeRestClientInterface;
 use Tagcade\Service\URPostFileResultInterface;
 use ZipArchive;
@@ -22,6 +22,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
     const EXTENSION_META = 'meta';
     const EXTENSION_LOCK = 'lock';
+    const JOB_LOCK_TTL = (30 * 60 * 1000); // 30 minutes expiry time for lock
 
     public static $SUPPORTED_DIR_SOURCE_MODULE_MAP = [
         self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK,
@@ -33,13 +34,18 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     protected $emailTemplate; // e.g pub$PUBLISHER_ID$.$TOKEN$@unified-report.dev => will be: pub2.28957425794274267073260979346@unifiedreport.dev
     protected $watchRoot;
     protected $archivedFiles;
+    protected $invalidFiles;
     protected $ttr;
 
     protected $metadataFrequency = [];
 
     /** @var TagcadeRestClientInterface */
     protected $restClient;
-
+    /**
+     * @var RedLock
+     */
+    protected $redLock;
+    protected $maxRetryFile;
     /**
      * @inheritdoc
      */
@@ -56,13 +62,19 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $container = $this->getContainer();
+        $this->redLock = $container->get('tagcade.service.red_lock');
+
         $this->restClient = $container->get('tagcade_app.service.tagcade.rest_client');
         $this->logger = $container->get('logger');
+        $this->maxRetryFile = intval($container->getParameter('tagcade.max_retry_file'));
 
         // create the lock
-        $lock = new LockHandler('ur:post_files_to_unified_report_API');
+        $pid = getmypid();
+        $lock = $this->redLock->lock('ur:post_files_to_unified_report_API', self::JOB_LOCK_TTL, [
+            'pid' => $pid
+        ]);
 
-        if (!$lock->lock()) {
+        if ($lock === false) {
             $this->logger->info(sprintf('%s: The command is already running in another process.', $this->getName()));
             return;
         }
@@ -74,6 +86,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
         $this->watchRoot = $this->getFileFullPath($container->getParameter('watch_root'));
         $this->archivedFiles = $this->getFileFullPath($container->getParameter('processed_archived_files'));
+        $this->invalidFiles = $this->getFileFullPath($container->getParameter('invalid_archived_files'));
 
         if (!is_dir($this->watchRoot)) {
             if (!mkdir($this->watchRoot)) {
@@ -100,13 +113,15 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             throw new \Exception('Invalid configuration of param supported_extensions');
         }
 
-        $newFiles = $this->getNewFiles($supportedExtensions);
+        $totalNewFiles = 0;
+        $newFiles = $this->getNewFiles($supportedExtensions, $totalNewFiles);
 
-        $this->logger->info(sprintf('Found %d new files', count($newFiles)));
+        $this->logger->info(sprintf('Found %d new files', $totalNewFiles));
 
         /* post file to unified reports api */
         $this->postFilesToUnifiedReportApi($newFiles);
 
+        $this->redLock->unlock($lock);
         $this->logger->info('Complete directory process');
     }
 
@@ -129,17 +144,18 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      * get new files from watch directory
      *
      * @param array $supportedExtensions
+     * @param $newFiles
      * @return array format as:
      *
      * [
-     *     [
-     *         "file" => <file path>,
-     *         "metadata" => <metadata file path>
-     *     ],
-     *     ...
+     * [
+     * "file" => <file path>,
+     * "metadata" => <metadata file path>
+     * ],
+     * ...
      * ]
      */
-    protected function getNewFiles(array $supportedExtensions)
+    protected function getNewFiles(array $supportedExtensions, &$newFiles)
     {
         // process zip files
         $this->extractZipFilesIfAny();
@@ -169,6 +185,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 continue;
             }
 
+            $newFiles++;
             if (!$this->supportFile($fullFilePath, $supportedExtensions)) {
                 continue;
             }
@@ -423,14 +440,27 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 if (!isset($metadata['reportFileUrl'])) {
                     // log or alert ...
                     $this->logger->info('Got only Metadata without report file url and not contain "reportFileUrl" data => skip');
+                    $this->moveFileToInvalidDir($metadataFilePath, $metadata);
                     continue;
                 }
 
                 // try process downloading file for email hook only ...
                 $reportFileUrl = $metadata['reportFileUrl'];
-                $downloadedFilePath = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
+                try {
+                    $downloadedFilePath = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
+                } catch (\Exception $exception) {
+                    $downloadedFilePath = null;
+                }
 
                 if (!$downloadedFilePath) {
+                    $this->logger->info(sprintf('can not download report from "%s"', $reportFileUrl));
+                    if ($this->redLock->getRetryCycleForFile($metadataFilePath) >= $this->maxRetryFile) {
+                        $this->moveFileToInvalidDir($metadataFilePath, $metadata);
+                        $this->redLock->removeRetryCycleKey($metadataFilePath);
+                        continue;
+                    }
+
+                    $this->redLock->increaseRetryCycleForFile($metadataFilePath);
                     continue;
                 }
 
@@ -475,6 +505,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             }
 
             $metadataFilePath = array_key_exists('metadata', $value) ? $value['metadata'] : null;
+
             $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
 
             /**@var URPostFileResultInterface $postResult */
@@ -494,7 +525,26 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                     continue;
                 }
 
-                $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
+                try {
+                    $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
+                    $postFail = $postResult->getStatusCode() != 200;
+                } catch (Exception $e) {
+                    $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                    $this->logger->error($e);
+                    $postFail = true;
+                }
+
+                if ($postFail) {
+                    if ($this->redLock->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
+                        $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
+                        $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
+                        $this->redLock->removeRetryCycleKey($filePath);
+                        continue;
+                    }
+
+                    $this->redLock->increaseRetryCycleForFile($filePath);
+                    continue;
+                }
 
                 $this->logger->info(sprintf('email %s: %s', $email, $postResult->getMessage()));
             } else if ($dirSourceModule == self::DIR_SOURCE_MODULE_FETCHER) {
@@ -518,23 +568,29 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 } else {
                     try {
                         $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
+                        $postFail = $postResult->getStatusCode() != 200;
                     } catch (Exception $e) {
                         $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
                         $this->logger->error($e);
-                        continue;
+                        $postFail = true;
                     }
 
                     // log file to figure out
                     $this->logger->info(sprintf('metadata file is %s, contents: %s', $metadataFilePath, json_encode($metadata)));
                     $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
 
-                    if (!$postResult instanceof URPostFileResultInterface) {
-                        continue;
-                    }
-
-                    if ($postResult->getStatusCode() != 200) {
+                    if ($postFail) {
                         $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
                         $this->logger->error($postResult->getMessage());
+
+                        if ($this->redLock->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
+                            $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
+                            $this->redLock->removeRetryCycleKey($filePath);
+                            $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
+                            continue;
+                        }
+
+                        $this->redLock->increaseRetryCycleForFile($filePath);
                         continue;
                     }
                 }
@@ -542,24 +598,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             /* move file to processed folder */
             $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
-
-            /*
-             * also move metadata file (if needed and existed) to processed folder
-             * notice: one meta may be used for many report files (e.g Spring Serve for account report)
-             */
-            $isNeedRemoveMetadataFile = true;
-            $metadataHash = $this->getMetadataHash($metadataFilePath);
-            if (array_key_exists($metadataHash, $this->metadataFrequency)) {
-                $this->metadataFrequency[$metadataHash]--;
-
-                if ($this->metadataFrequency[$metadataHash] > 0) {
-                    $isNeedRemoveMetadataFile = false; // not need remove if still have report files relate to this metadata file
-                }
-            }
-
-            if ($isNeedRemoveMetadataFile && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
-                $this->moveFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
-            }
+            $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
         }
     }
 
@@ -609,6 +648,48 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         $newFileToStore = $this->getProcessedFilePath($filePath, $publisherId, $partnerCNameOrToken, $this->archivedFiles);
         $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
         rename($filePath, $newFileToStore);
+    }
+
+    private function moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken)
+    {
+        /*
+         * also move metadata file (if needed and existed) to processed folder
+         * notice: one meta may be used for many report files (e.g Spring Serve for account report)
+         */
+        $isNeedRemoveMetadataFile = true;
+        $metadataHash = $this->getMetadataHash($metadataFilePath);
+        if (array_key_exists($metadataHash, $this->metadataFrequency)) {
+            $this->metadataFrequency[$metadataHash]--;
+
+            if ($this->metadataFrequency[$metadataHash] > 0) {
+                $isNeedRemoveMetadataFile = false; // not need remove if still have report files relate to this metadata file
+            }
+        }
+
+        if ($isNeedRemoveMetadataFile && file_exists($metadataFilePath) && is_readable($metadataFilePath)) {
+            $this->moveFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
+        }
+    }
+
+    /**
+     * @param $filePath
+     * @param $metadata
+     * @internal param $publisherId
+     * @internal param $partnerCNameOrToken
+     */
+    private function moveFileToInvalidDir($filePath, $metadata)
+    {
+        if (array_key_exists('publisherId', $metadata) && array_key_exists('integrationCName', $metadata)) {
+            $newFileToStore = $this->getProcessedFilePath($filePath, $metadata['publisherId'], $metadata['integrationCName'], $this->invalidFiles);
+            $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
+            rename($filePath, $newFileToStore);
+        } else {
+            try {
+                unlink($filePath);
+            } catch (\Exception $exception) {
+                $this->logger->error($exception->getMessage());
+            }
+        }
     }
 
     /**
@@ -783,6 +864,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             return $newFileName;
         } catch (Exception $e) {
+            $this->logger->error(sprintf('Failed to download report file "%s"', $url));
             return false;
         }
     }

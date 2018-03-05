@@ -37,3 +37,5 @@ parameters:
     tagcade.red_lock.retry_delay: 200
     tagcade.red_lock.retry_count: 3
     tagcade.max_retry_file: 5
+    tagcade.retry_cycle_prefix_key: max_retry
+    tagcade.max_retry_key_expire_time: 604800

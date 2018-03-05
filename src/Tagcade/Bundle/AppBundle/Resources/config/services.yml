@@ -19,16 +19,23 @@ services:
             - '%tagcade.red_lock.retry_delay%'
             - '%tagcade.red_lock.retry_count%'
 
+    tagcade.service.retry_cycle_service:
+        class: Tagcade\Service\RetryCycleService
+        arguments:
+            - '@tagcade.service.redis_cache'
+            - '%tagcade.retry_cycle_prefix_key%'
+            - '%tagcade.max_retry_key_expire_time%'
+
     tagcade_app.service.tagcade.rest_client:
         class: Tagcade\Service\TagcadeRestClient
         arguments:
-            - @rest.client
-            - %tagcade_user_name%
-            - %tagcade_user_password%
-            - %tagcade_get_token_url%
-            - %ur_get_data_sources_by_integration_url%
-            - %ur_get_data_sources_by_email_url%
-            - %ur_receive_file_url%
+            - '@rest.client'
+            - '%tagcade_user_name%'
+            - '%tagcade_user_password%'
+            - '%tagcade_get_token_url%'
+            - '%ur_get_data_sources_by_integration_url%'
+            - '%ur_get_data_sources_by_email_url%'
+            - '%ur_receive_file_url%'
 
 
 

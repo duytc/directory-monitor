@@ -114,47 +114,4 @@ class RedLock
         ';
         return $instance->eval($script, [$resource, $token], 1);
     }
-
-    public function getRetryCycleForFile($filePath)
-    {
-        $key = md5($filePath);
-        $retries = [];
-        foreach ($this->servers as $server) {
-            if ($server instanceof \Redis) {
-                if ($server->isConnected()) {
-                    $retries[] = $server->get($key);
-                }
-            }
-        }
-
-        if (empty($retries)) {
-            return 0;
-        }
-
-        return max($retries);
-    }
-
-    public function increaseRetryCycleForFile($filePath)
-    {
-        $key = md5($filePath);
-        foreach ($this->servers as $server) {
-            if ($server instanceof \Redis) {
-                if ($server->isConnected()) {
-                    $server->incr($key);
-                }
-            }
-        }
-    }
-
-    public function removeRetryCycleKey($filePath)
-    {
-        $key = md5($filePath);
-        foreach ($this->servers as $server) {
-            if ($server instanceof \Redis) {
-                if ($server->isConnected()) {
-                    $server->del($key);
-                }
-            }
-        }
-    }
 }

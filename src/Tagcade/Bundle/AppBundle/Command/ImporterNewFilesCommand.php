@@ -10,6 +10,7 @@ use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Tagcade\Service\RedLock;
+use Tagcade\Service\RetryCycleService;
 use Tagcade\Service\TagcadeRestClientInterface;
 use Tagcade\Service\URPostFileResultInterface;
 use ZipArchive;
@@ -45,6 +46,11 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      * @var RedLock
      */
     protected $redLock;
+
+    /**
+     * @var RetryCycleService
+     */
+    protected $retryCycleService;
     protected $maxRetryFile;
     /**
      * @inheritdoc
@@ -65,6 +71,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         $this->redLock = $container->get('tagcade.service.red_lock');
 
         $this->restClient = $container->get('tagcade_app.service.tagcade.rest_client');
+        $this->retryCycleService = $container->get('tagcade.service.retry_cycle_service');
         $this->logger = $container->get('logger');
         $this->maxRetryFile = intval($container->getParameter('tagcade.max_retry_file'));
 
@@ -454,13 +461,13 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
                 if (!$downloadedFilePath) {
                     $this->logger->info(sprintf('can not download report from "%s"', $reportFileUrl));
-                    if ($this->redLock->getRetryCycleForFile($metadataFilePath) >= $this->maxRetryFile) {
+                    if ($this->retryCycleService->getRetryCycleForFile($metadataFilePath) >= $this->maxRetryFile) {
                         $this->moveFileToInvalidDir($metadataFilePath, $metadata);
-                        $this->redLock->removeRetryCycleKey($metadataFilePath);
+                        $this->retryCycleService->removeRetryCycleKey($metadataFilePath);
                         continue;
                     }
 
-                    $this->redLock->increaseRetryCycleForFile($metadataFilePath);
+                    $this->retryCycleService->increaseRetryCycleForFile($metadataFilePath);
                     continue;
                 }
 
@@ -535,14 +542,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                 }
 
                 if ($postFail) {
-                    if ($this->redLock->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
+                    if ($this->retryCycleService->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
                         $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
                         $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
-                        $this->redLock->removeRetryCycleKey($filePath);
+                        $this->retryCycleService->removeRetryCycleKey($filePath);
                         continue;
                     }
 
-                    $this->redLock->increaseRetryCycleForFile($filePath);
+                    $this->retryCycleService->increaseRetryCycleForFile($filePath);
                     continue;
                 }
 
@@ -583,14 +590,14 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
                         $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
                         $this->logger->error($postResult->getMessage());
 
-                        if ($this->redLock->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
+                        if ($this->retryCycleService->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
                             $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
-                            $this->redLock->removeRetryCycleKey($filePath);
+                            $this->retryCycleService->removeRetryCycleKey($filePath);
                             $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
                             continue;
                         }
 
-                        $this->redLock->increaseRetryCycleForFile($filePath);
+                        $this->retryCycleService->increaseRetryCycleForFile($filePath);
                         continue;
                     }
                 }

@@ -3,12 +3,12 @@
 namespace Tagcade\Bundle\AppBundle\Command;
 
 use Exception;
-use Pheanstalk\PheanstalkInterface;
 use PHPExcel;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\ContainerAwareCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Tagcade\Service\RedLock;
 use Tagcade\Service\RetryCycleService;
 use Tagcade\Service\TagcadeRestClientInterface;
@@ -86,39 +86,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             return;
         }
 
-        $this->emailTemplate = $container->getParameter('ur_email_template');
-        if (strpos($this->emailTemplate, '$PUBLISHER_ID$') < 0 || strpos($this->emailTemplate, '$TOKEN$') < 0) {
-            throw new \Exception(sprintf('ur_email_template %s is invalid config: missing $PUBLISHER_ID$ or $TOKEN$ macro', $this->emailTemplate));
-        }
-
-        $this->watchRoot = $this->getFileFullPath($container->getParameter('watch_root'));
-        $this->archivedFiles = $this->getFileFullPath($container->getParameter('processed_archived_files'));
-        $this->invalidFiles = $this->getFileFullPath($container->getParameter('invalid_archived_files'));
-
-        if (!is_dir($this->watchRoot)) {
-            if (!mkdir($this->watchRoot)) {
-                throw new \Exception(sprintf('Can not create watchRoot directory %s', $this->watchRoot));
-            }
-        }
-
-        if (!is_dir($this->archivedFiles)) {
-            if (!mkdir($this->archivedFiles)) {
-                throw new \Exception(sprintf('Can not create archivedFiles directory %s', $this->archivedFiles));
-            }
-        }
-
-        if (!is_readable($this->watchRoot)) {
-            throw new \Exception(sprintf('Watch root is not readable. The full path is %s', $this->watchRoot));
-        }
-
-        if (!is_writable($this->archivedFiles)) {
-            throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->watchRoot));
-        }
-
-        $supportedExtensions = $container->getParameter('supported_extensions');
-        if (!is_array($supportedExtensions)) {
-            throw new \Exception('Invalid configuration of param supported_extensions');
-        }
+        $supportedExtensions = $this->validateParameters($container);
 
         $totalNewFiles = 0;
         $newFiles = $this->getNewFiles($supportedExtensions, $totalNewFiles);
@@ -437,175 +405,31 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
      */
     private function postFilesToUnifiedReportApi(array $fileList)
     {
-        foreach ($fileList as $index => $value) {
-            if (!array_key_exists('file', $value) || empty($value['file'])) {
-                // report file does not exist, try to get metadata and find out if need download report file from metadata info
-                // current this is for supporting Email webhook that has download link only in email body
-                $metadataFilePath = array_key_exists('metadata', $value) ? $value['metadata'] : null;
-                $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
-
-                if (!isset($metadata['reportFileUrl'])) {
-                    // log or alert ...
-                    $this->logger->info('Got only Metadata without report file url and not contain "reportFileUrl" data => skip');
-                    $this->moveFileToInvalidDir($metadataFilePath, $metadata);
-                    continue;
-                }
-
-                // try process downloading file for email hook only ...
-                $reportFileUrl = $metadata['reportFileUrl'];
-                try {
-                    $downloadedFilePath = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
-                } catch (\Exception $exception) {
-                    $downloadedFilePath = null;
-                }
-
-                if (!$downloadedFilePath) {
-                    $this->logger->info(sprintf('can not download report from "%s"', $reportFileUrl));
-                    if ($this->retryCycleService->getRetryCycleForFile($metadataFilePath) >= $this->maxRetryFile) {
-                        $this->moveFileToInvalidDir($metadataFilePath, $metadata);
-                        $this->retryCycleService->removeRetryCycleKey($metadataFilePath);
-                        continue;
-                    }
-
-                    $this->retryCycleService->increaseRetryCycleForFile($metadataFilePath);
-                    continue;
-                }
-
-                $value['file'] = $downloadedFilePath;
+        foreach ($fileList as $index => $fileInfo) {
+            if (!array_key_exists('file', $fileInfo) || empty($fileInfo['file'])) {
+                $fileInfo = $this->downloadMissingFile($fileInfo);
             }
 
-            $filePath = $value['file'];
+            if (!$this->isValidateFileInfo($fileInfo)) {
+                continue;
+            }
 
+            $filePath = $fileInfo['file'];
             $this->logger->info(sprintf("Starting to process file %s", $filePath));
 
-            $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
-
-            // Extract network name and publisher id from file path
-            $dirs = array_reverse(explode('/', $fileRelativePath));
-
-            if (!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
-                $this->logger->info(sprintf('Not a valid file location at %s. It should be under publisherId/partnerCNameOrToken...', $filePath));
-                continue;
-            }
-
-            $dirSourceModule = array_pop($dirs); // dirSourceModule: fetcher or email
-            if (empty($dirSourceModule)) {
-                $this->logger->error(sprintf('Can not extract source module from file path %s!!!', $filePath));
-                continue;
-            }
-
-            if (!in_array($dirSourceModule, self::$SUPPORTED_DIR_SOURCE_MODULE_MAP)) {
-                $this->logger->error(sprintf('Not support for outside of source module %s!!!', implode(' and ', self::$SUPPORTED_DIR_SOURCE_MODULE_MAP)));
-                continue;
-            }
-
-            $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
-            if (!$publisherId) {
-                $this->logger->info(sprintf('Can not extract Publisher from file path %s!!!', $filePath));
-                continue;
-            }
-
-            $partnerCNameOrToken = array_pop($dirs);
-            if (empty($partnerCNameOrToken)) {
-                $this->logger->error(sprintf('Can not extract PartnerCName or Token from file path %s!!!', $filePath));
-                continue;
-            }
-
-            $metadataFilePath = array_key_exists('metadata', $value) ? $value['metadata'] : null;
-
-            $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
-
-            /**@var URPostFileResultInterface $postResult */
-            $postResult = null;
+            $dirSourceModule = $this->extractDirSourceModule($filePath);
 
             /* post file to ur api for data sources */
-            if ($dirSourceModule == self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK) {
-                /* create email */
-                $emailToken = $partnerCNameOrToken;
-                $email = str_replace('$PUBLISHER_ID$', $publisherId, $this->emailTemplate);
-                $email = str_replace('$TOKEN$', $emailToken, $email);
-
-                /* get list data sources */
-                $dataSourceIds = $this->getDataSourceIdsByEmail($publisherId, $email);
-                if (!is_array($dataSourceIds)) {
-                    $this->logger->warning(sprintf('No data sources found for this publisher %d and email %s', $publisherId, $email));
-                    continue;
-                }
-
-                try {
-                    $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
-                    $postFail = $postResult->getStatusCode() != 200;
-                } catch (Exception $e) {
-                    $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
-                    $this->logger->error($e);
-                    $postFail = true;
-                }
-
-                if ($postFail) {
-                    if ($this->retryCycleService->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
-                        $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
-                        $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
-                        $this->retryCycleService->removeRetryCycleKey($filePath);
-                        continue;
-                    }
-
-                    $this->retryCycleService->increaseRetryCycleForFile($filePath);
-                    continue;
-                }
-
-                $this->logger->info(sprintf('email %s: %s', $email, $postResult->getMessage()));
-            } else if ($dirSourceModule == self::DIR_SOURCE_MODULE_FETCHER) {
-                // use metadata to filter data source
-                $dataSourceIds = $this->getDataSourcesFromMetaData($metadata);
-
-                if (!is_array($dataSourceIds) || count($dataSourceIds) < 1) {
-                    unlink($filePath);
-                    continue;
-                }
-
-                if (!is_array($dataSourceIds)) {
-                    $this->logger->warning(sprintf('No data sources found for this publisher %d and partner cname %s', $publisherId, $partnerCNameOrToken));
-                    continue;
-                }
-
-                $empty = $this->checkFileIsEmptyOrNot($filePath);
-                if ($empty) {
-                    // file is empty
-                    $this->logger->warning(sprintf('Due to file(%s) is empty. So this file did not upload to UR, move file to Process Dir', $filePath));
-                } else {
-                    try {
-                        $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
-                        $postFail = $postResult->getStatusCode() != 200;
-                    } catch (Exception $e) {
-                        $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
-                        $this->logger->error($e);
-                        $postFail = true;
-                    }
-
-                    // log file to figure out
-                    $this->logger->info(sprintf('metadata file is %s, contents: %s', $metadataFilePath, json_encode($metadata)));
-                    $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
-
-                    if ($postFail) {
-                        $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
-                        $this->logger->error($postResult->getMessage());
-
-                        if ($this->retryCycleService->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
-                            $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
-                            $this->retryCycleService->removeRetryCycleKey($filePath);
-                            $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
-                            continue;
-                        }
-
-                        $this->retryCycleService->increaseRetryCycleForFile($filePath);
-                        continue;
-                    }
-                }
+            switch ($dirSourceModule) {
+                case self::DIR_SOURCE_MODULE_EMAIL_WEB_HOOK:
+                    $this->importFileFromEmailWebHook($fileInfo);
+                    break;
+                case self::DIR_SOURCE_MODULE_FETCHER:
+                    $this->importFileFromFetcher($fileInfo);
+                    break;
+                default:
+                    $this->logger->warning(sprintf("Can not find module for '%s'", $dirSourceModule));
             }
-
-            /* move file to processed folder */
-            $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
-            $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
         }
     }
 
@@ -654,6 +478,11 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     {
         $newFileToStore = $this->getProcessedFilePath($filePath, $publisherId, $partnerCNameOrToken, $this->archivedFiles);
         $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
+        if (is_file($newFileToStore) && file_exists($newFileToStore)) {
+            $path_parts = pathinfo($newFileToStore);
+            $randomString = bin2hex(random_bytes(16));
+            $newFileToStore = $path_parts['dirname'] . '/' . $path_parts['filename'] . $randomString . '.' . $path_parts['extension'];
+        }
         rename($filePath, $newFileToStore);
     }
 
@@ -689,6 +518,11 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         if (array_key_exists('publisherId', $metadata) && array_key_exists('integrationCName', $metadata)) {
             $newFileToStore = $this->getProcessedFilePath($filePath, $metadata['publisherId'], $metadata['integrationCName'], $this->invalidFiles);
             $this->logger->info(sprintf('Moving "%s" to "%s"', $filePath, $newFileToStore));
+            if (is_file($newFileToStore) && file_exists($newFileToStore)) {
+                $path_parts = pathinfo($newFileToStore);
+                $randomString = bin2hex(random_bytes(16));
+                $newFileToStore = $path_parts['dirname'] . '/' . $path_parts['filename'] . $randomString . '.' . $path_parts['extension'];
+            }
             rename($filePath, $newFileToStore);
         } else {
             try {
@@ -696,6 +530,34 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             } catch (\Exception $exception) {
                 $this->logger->error($exception->getMessage());
             }
+        }
+    }
+
+    /**
+     * @param $metadataFilePath
+     */
+    private function moveMetadataFileToInvalidDir($metadataFilePath)
+    {
+        /*
+         * also move metadata file (if needed and existed) to invalid folder
+         * notice: one meta may be used for many report files (e.g Spring Serve for account report)
+         */
+        if (!file_exists($metadataFilePath) || !is_readable($metadataFilePath)) {
+            return;
+        }
+        $isNeedRemoveMetadataFile = true;
+        $metadataHash = $this->getMetadataHash($metadataFilePath);
+        if (array_key_exists($metadataHash, $this->metadataFrequency)) {
+            $this->metadataFrequency[$metadataHash]--;
+
+            if ($this->metadataFrequency[$metadataHash] > 0) {
+                $isNeedRemoveMetadataFile = false; // not need remove if still have report files relate to this metadata file
+            }
+        }
+
+        if ($isNeedRemoveMetadataFile) {
+            $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
+            $this->moveFileToInvalidDir($metadataFilePath, $metadata);
         }
     }
 
@@ -978,5 +840,285 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         }
 
         return $empty;
+    }
+
+    /**
+     * @param $fileInfo
+     * @return mixed
+     */
+    private function downloadMissingFile($fileInfo)
+    {
+        // report file does not exist, try to get metadata and find out if need download report file from metadata info
+        // current this is for supporting Email webhook that has download link only in email body
+        $metadataFilePath = array_key_exists('metadata', $fileInfo) ? $fileInfo['metadata'] : null;
+        $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
+
+        if (!isset($metadata['reportFileUrl'])) {
+            // log or alert ...
+            $this->logger->info('Got only Metadata without report file url and not contain "reportFileUrl" data => skip');
+            $this->moveFileToInvalidDir($metadataFilePath, $metadata);
+            return $fileInfo;
+        }
+
+        // try process downloading file for email hook only ...
+        $reportFileUrl = $metadata['reportFileUrl'];
+        try {
+            $downloadedFilePath = $this->downloadFileFromURL($reportFileUrl, $metadataFilePath);
+        } catch (\Exception $exception) {
+            $downloadedFilePath = null;
+        }
+
+        if (!$downloadedFilePath) {
+            $this->logger->info(sprintf('can not download report from "%s"', $reportFileUrl));
+            $this->handleRetry(null, $metadata, $metadataFilePath);
+
+            return $fileInfo;
+        }
+
+        $fileInfo['file'] = $downloadedFilePath;
+
+        return $fileInfo;
+    }
+
+    /**
+     * @param $fileInfo
+     * @return bool
+     */
+    private function isValidateFileInfo($fileInfo)
+    {
+        if (!array_key_exists('file', $fileInfo) || !is_file($fileInfo['file'])) {
+            return false;
+        }
+
+        $filePath = $fileInfo['file'];
+        $this->logger->info(sprintf("Starting to process file %s", $filePath));
+        $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
+
+        // Extract network name and publisher id from file path
+        $dirs = array_reverse(explode('/', $fileRelativePath));
+        if (!is_array($dirs) || count($dirs) < self::DIR_MIN_DEPTH_LEVELS) {
+            $this->logger->info(sprintf('Not a valid file location at %s. It should be under publisherId/partnerCNameOrToken...', $filePath));
+            return false;
+        }
+
+        $dirSourceModule = array_pop($dirs); // dirSourceModule: fetcher or email
+        if (empty($dirSourceModule)) {
+            $this->logger->error(sprintf('Can not extract source module from file path %s!!!', $filePath));
+            return false;
+        }
+
+        if (!in_array($dirSourceModule, self::$SUPPORTED_DIR_SOURCE_MODULE_MAP)) {
+            $this->logger->error(sprintf('Not support for outside of source module %s!!!', implode(' and ', self::$SUPPORTED_DIR_SOURCE_MODULE_MAP)));
+            return false;
+        }
+
+        $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+        if (!$publisherId) {
+            $this->logger->info(sprintf('Can not extract Publisher from file path %s!!!', $filePath));
+            return false;
+        }
+
+        $partnerCNameOrToken = array_pop($dirs);
+        if (empty($partnerCNameOrToken)) {
+            $this->logger->error(sprintf('Can not extract PartnerCName or Token from file path %s!!!', $filePath));
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param $fileInfo
+     */
+    private function importFileFromEmailWebHook($fileInfo)
+    {
+        $filePath = $fileInfo['file'];
+        $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
+        $dirs = array_reverse(explode('/', $fileRelativePath));
+        $dirSourceModule = array_pop($dirs);
+        $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+        $partnerCNameOrToken = array_pop($dirs);
+        $metadataFilePath = array_key_exists('metadata', $fileInfo) ? $fileInfo['metadata'] : null;
+        $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
+        $postResult = null;
+
+        /* create email */
+        $emailToken = $partnerCNameOrToken;
+        $email = str_replace('$PUBLISHER_ID$', $publisherId, $this->emailTemplate);
+        $email = str_replace('$TOKEN$', $emailToken, $email);
+
+        /* get list data sources */
+        $dataSourceIds = $this->getDataSourceIdsByEmail($publisherId, $email);
+        if (!is_array($dataSourceIds)) {
+            $this->logger->warning(sprintf('No data sources found for this publisher %d and email %s', $publisherId, $email));
+            $this->handleRetry($filePath, $metadata, $metadataFilePath);
+
+            return;
+        }
+
+        try {
+            $postResult = $this->restClient->postFileToURApiForDataSourcesViaEmailWebHook($filePath, $metadata, $dataSourceIds);
+            $postFail = $postResult->getStatusCode() != 200;
+        } catch (Exception $e) {
+            $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+            $this->logger->error($e);
+            $postFail = true;
+        }
+
+        if ($postFail) {
+            if ($postResult instanceof URPostFileResultInterface) {
+                $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                $this->logger->error($postResult->getMessage());
+            }
+
+            $this->handleRetry($filePath, $metadata, $metadataFilePath);
+
+            return;
+        }
+
+        $this->logger->info(sprintf('email %s: %s', $email, $postResult->getMessage()));
+
+        /* move file to processed folder */
+        $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
+        $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
+    }
+
+    /**
+     * @param $fileInfo
+     */
+    private function importFileFromFetcher($fileInfo)
+    {
+        $filePath = $fileInfo['file'];
+        $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
+        $dirs = array_reverse(explode('/', $fileRelativePath));
+        $publisherId = filter_var(array_pop($dirs), FILTER_VALIDATE_INT);
+        $partnerCNameOrToken = array_pop($dirs);
+        $metadataFilePath = array_key_exists('metadata', $fileInfo) ? $fileInfo['metadata'] : null;
+        $metadata = $this->getMetaDataFromFilePath($metadataFilePath);
+        $postResult = null;
+
+        // use metadata to filter data source
+        $dataSourceIds = $this->getDataSourcesFromMetaData($metadata);
+
+        if (!is_array($dataSourceIds) || count($dataSourceIds) < 1) {
+            $this->logger->warning(sprintf('No data sources found for this publisher %d and partner cname %s', $publisherId, $partnerCNameOrToken));
+            $this->handleRetry($filePath, $metadata, $metadataFilePath);
+
+            return;
+
+        }
+
+        $empty = $this->checkFileIsEmptyOrNot($filePath);
+        if ($empty) {
+            // file is empty
+            $this->logger->warning(sprintf('Due to file(%s) is empty. So this file did not upload to UR, move file to Invalid Dir', $filePath));
+            $postFail = true;
+        } else {
+            try {
+                $postResult = $this->restClient->postFileToURApiForDataSourcesViaFetcher($filePath, $metadata, $dataSourceIds);
+                $postFail = $postResult->getStatusCode() != 200;
+            } catch (Exception $e) {
+                $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                $this->logger->error($e);
+                $postFail = true;
+            }
+
+            // log file to figure out
+            $this->logger->info(sprintf('metadata file is %s, contents: %s', $metadataFilePath, json_encode($metadata)));
+            $this->logger->info(sprintf('fetcher partner %s: %s', $partnerCNameOrToken, $postResult->getMessage()));
+        }
+
+        if ($postFail) {
+            if ($postResult instanceof URPostFileResultInterface) {
+                $this->logger->warning(sprintf('Post file failure for %s, keep file to try again later', $filePath));
+                $this->logger->error($postResult->getMessage());
+            }
+
+            $this->handleRetry($filePath, $metadata, $metadataFilePath);
+
+            return;
+        }
+
+        /* move file to processed folder */
+        $this->moveFileToProcessDir($filePath, $publisherId, $partnerCNameOrToken);
+        $this->moveMetadataFileToProcessDir($metadataFilePath, $publisherId, $partnerCNameOrToken);
+    }
+
+    /**
+     * @param $filePath
+     * @return mixed
+     */
+    private function extractDirSourceModule($filePath)
+    {
+        $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
+        $dirs = array_reverse(explode('/', $fileRelativePath));
+        $dirSourceModule = array_pop($dirs);
+
+        return $dirSourceModule;
+    }
+
+    /**
+     * @param $filePath
+     * @param $metadata
+     * @param $metadataFilePath
+     */
+    private function handleRetry($filePath, $metadata, $metadataFilePath)
+    {
+        if ($this->retryCycleService->getRetryCycleForFile($filePath) >= $this->maxRetryFile) {
+            if (is_file($filePath)) {
+                $this->moveFileToInvalidDir($filePath, $metadata);
+            }
+            if (is_file($metadataFilePath)) {
+                $this->moveMetadataFileToInvalidDir($metadataFilePath);
+            }
+            $this->retryCycleService->removeRetryCycleKey($filePath);
+            return;
+        }
+
+        $this->retryCycleService->increaseRetryCycleForFile($filePath);
+    }
+
+
+    /**
+     * @param ContainerInterface $container
+     * @return mixed
+     * @throws Exception
+     */
+    private function validateParameters($container)
+    {
+        $this->emailTemplate = $container->getParameter('ur_email_template');
+        if (strpos($this->emailTemplate, '$PUBLISHER_ID$') < 0 || strpos($this->emailTemplate, '$TOKEN$') < 0) {
+            throw new \Exception(sprintf('ur_email_template %s is invalid config: missing $PUBLISHER_ID$ or $TOKEN$ macro', $this->emailTemplate));
+        }
+
+        $this->watchRoot = $this->getFileFullPath($container->getParameter('watch_root'));
+        $this->archivedFiles = $this->getFileFullPath($container->getParameter('processed_archived_files'));
+        $this->invalidFiles = $this->getFileFullPath($container->getParameter('invalid_archived_files'));
+
+        if (!is_dir($this->watchRoot)) {
+            if (!mkdir($this->watchRoot)) {
+                throw new \Exception(sprintf('Can not create watchRoot directory %s', $this->watchRoot));
+            }
+        }
+
+        if (!is_dir($this->archivedFiles)) {
+            if (!mkdir($this->archivedFiles)) {
+                throw new \Exception(sprintf('Can not create archivedFiles directory %s', $this->archivedFiles));
+            }
+        }
+
+        if (!is_readable($this->watchRoot)) {
+            throw new \Exception(sprintf('Watch root is not readable. The full path is %s', $this->watchRoot));
+        }
+
+        if (!is_writable($this->archivedFiles)) {
+            throw new \Exception(sprintf('Archived path is not writable. The full path is %s', $this->watchRoot));
+        }
+
+        $supportedExtensions = $container->getParameter('supported_extensions');
+        if (!is_array($supportedExtensions)) {
+            throw new \Exception('Invalid configuration of param supported_extensions');
+        }
+        return $supportedExtensions;
     }
 }

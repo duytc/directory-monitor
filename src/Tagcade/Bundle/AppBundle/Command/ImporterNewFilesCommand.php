@@ -700,15 +700,43 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
             $url = 'http://' . $url;
         }
 
-        $extension = $this->getExtensionOfReportFromURL($url);
+        $headers = $this->getHeaders($url);
+        // Follow redirects
+        if (isset($headers['url']) and $headers['url'] !== $url) {
+            $url = $headers['url'];
+        }
+
+        $fileNameFromUrl = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_FILENAME);
+
+        $fileNameFromUrl = urldecode($fileNameFromUrl);
+        $fileNameFromUrl = preg_replace('#\s+#', '_', $fileNameFromUrl); // replace spaces
+        $fileNameFromUrl = preg_replace('#[^-_.a-z0-9]+#i', '', $fileNameFromUrl); // remove other characters
+        $fileNameFromUrl = preg_replace('#[_-]{2,}#', '_', $fileNameFromUrl); // replace two or more dash/underscores with 1
+
+        $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
+
+        if (empty($extension)) {
+            $contentType = null;
+            if (isset($headers['content_type'])) {
+                $contentType = $headers['content_type'];
+            }
+
+            $extension = $this->getExtensionForContentType($contentType);
+        }
 
         /** Quit when could not detect extension from URL */
         if (empty($extension)) {
             return false;
         }
 
-        $newFileName = str_replace('.meta', "", $metaDataFilePath);
-        $newFileName = sprintf('%s.%s', $newFileName, $extension);
+        $newFilePath = dirname($metaDataFilePath);
+        $newFileName = str_replace('.meta', "", basename($metaDataFilePath)); //default file name
+
+        if (!empty($fileNameFromUrl)) {
+            $newFileName = $fileNameFromUrl; //correct file name
+        }
+
+        $newFileName = sprintf('%s/%s.%s', $newFilePath, $newFileName, $extension);
 
         try {
             $file = fopen($url, 'rb');
@@ -733,7 +761,7 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
 
             return $newFileName;
         } catch (Exception $e) {
-            $this->logger->error(sprintf('Failed to download report file "%s"', $url));
+            $this->logger->error(sprintf('Failed to download report file "%s". Detail %s', $url, $e->getMessage()));
             return false;
         }
     }
@@ -749,20 +777,12 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
     }
 
     /**
-     * @param $url
+     * @param $contentType
      * @return string|null|false
      */
-    private function getExtensionOfReportFromURL($url)
+    private function getExtensionForContentType($contentType)
     {
-        $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION);
-
-        if (!empty($extension)) {
-            return $extension;
-        }
-
-        $headers = $this->getHeaders($url);
-
-        $contentType = preg_replace('/;.*/', '', $headers['content_type']);
+        $contentType = preg_replace('/;.*/', '', $contentType);
 
         switch ($contentType) {
             case 'text/csv':
@@ -891,7 +911,6 @@ class ImporterNewFilesCommand extends ContainerAwareCommand
         }
 
         $filePath = $fileInfo['file'];
-        $this->logger->info(sprintf("Starting to process file %s", $filePath));
         $fileRelativePath = trim(str_replace($this->watchRoot, '', $filePath), '/');
 
         // Extract network name and publisher id from file path
